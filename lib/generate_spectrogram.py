@@ -51,7 +51,8 @@ def compute_spectrogram_chunk(audio, sr, nperseg, hop):
 
 def generate_spectrogram(input_wav, output_png, width, height,
                          colormap_name='inferno', freq_min=20, freq_max=None,
-                         dynamic_range=90, original_sr=None, grid=False):
+                         dynamic_range=90, original_sr=None, grid=False,
+                         fft_window=0):
     """Generate a wide spectrogram PNG from a WAV file."""
 
     sr, audio = load_audio_mono(input_wav)
@@ -66,7 +67,9 @@ def generate_spectrogram(input_wav, output_png, width, height,
         original_sr = sr
 
     # STFT parameters
-    if sr >= 96000:
+    if fft_window and fft_window > 0:
+        nperseg = fft_window
+    elif sr >= 96000:
         nperseg = 8192
     elif sr >= 44100:
         nperseg = 4096
@@ -195,6 +198,7 @@ def main():
     parser.add_argument('--dynamic-range', type=float, default=90, help='Dynamic range in dB')
     parser.add_argument('--original-sr', type=int, default=0, help='Original sample rate for labeling')
     parser.add_argument('--grid', action='store_true', help='Draw frequency grid lines')
+    parser.add_argument('--fft-window', type=int, default=0, help='FFT window size (0=auto)')
     args = parser.parse_args()
 
     info = generate_spectrogram(
@@ -208,6 +212,7 @@ def main():
         dynamic_range=args.dynamic_range,
         original_sr=args.original_sr if args.original_sr > 0 else None,
         grid=args.grid,
+        fft_window=args.fft_window,
     )
 
     for k, v in info.items():
