@@ -1,53 +1,67 @@
 #!/usr/bin/env python3
-"""Render a transparent frequency scale overlay PNG for the right edge of the spectrogram viewport."""
+"""Render a transparent frequency scale overlay — NASA telemetry aesthetic."""
 
 import argparse
 from PIL import Image, ImageDraw, ImageFont
 
 
 def generate_tick_freqs(f_lo, f_hi):
-    """Generate nice tick frequencies for the given range."""
+    """Generate tick frequencies: major and minor."""
     f_range = f_hi - f_lo
 
-    # Choose step based on range, favoring denser ticks
     if f_range > 100000:
-        step = 10000
+        major_step, minor_step = 10000, 5000
     elif f_range > 40000:
-        step = 5000
+        major_step, minor_step = 5000, 1000
     elif f_range > 10000:
-        step = 1000
+        major_step, minor_step = 2000, 1000
     elif f_range > 5000:
-        step = 1000
+        major_step, minor_step = 1000, 500
     elif f_range > 2000:
-        step = 500
+        major_step, minor_step = 500, 100
     elif f_range > 500:
-        step = 100
+        major_step, minor_step = 200, 100
     else:
-        step = 50
+        major_step, minor_step = 50, 10
 
-    ticks = []
-    f_val = step
+    majors = []
+    f_val = major_step
     while f_val < f_hi:
         if f_val > f_lo:
-            ticks.append(f_val)
-        f_val += step
-    return ticks
+            majors.append(f_val)
+        f_val += major_step
+
+    minors = []
+    f_val = minor_step
+    while f_val < f_hi:
+        if f_val > f_lo and f_val not in majors:
+            minors.append(f_val)
+        f_val += minor_step
+
+    return majors, minors
 
 
 def format_freq(freq):
-    """Format frequency as compact label: 1k, 2k, 10k, 500, etc."""
+    """Format frequency: 1K, 2K, 10K, 500, etc."""
     if freq >= 1000:
         val = freq / 1000
         if val == int(val):
-            return f"{int(val)}k"
+            return f"{int(val)}K"
         else:
-            return f"{val:.1f}k"
+            return f"{val:.1f}K"
     else:
         return f"{int(freq)}"
 
 
-def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=42):
-    """Render a transparent overlay with frequency scale on the right side."""
+def freq_to_y(freq, f_lo, f_hi, height):
+    """Convert frequency to Y pixel position."""
+    frac = (freq - f_lo) / (f_hi - f_lo + 1e-10)
+    y = int((1.0 - frac) * height)
+    return max(0, min(height - 1, y))
+
+
+def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=38):
+    """Render NASA telemetry frequency scale overlay."""
 
     font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
@@ -64,11 +78,20 @@ def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=4
     if font is None:
         font = ImageFont.load_default()
 
-    # Smaller font for the "Hz" header
+    small_font = None
+    for fp in font_paths:
+        try:
+            small_font = ImageFont.truetype(fp, int(font_size * 0.55))
+            break
+        except Exception:
+            continue
+    if small_font is None:
+        small_font = font
+
     header_font = None
     for fp in font_paths:
         try:
-            header_font = ImageFont.truetype(fp, int(font_size * 0.7))
+            header_font = ImageFont.truetype(fp, int(font_size * 0.65))
             break
         except Exception:
             continue
@@ -81,69 +104,82 @@ def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=4
     f_lo = float(freq_min)
     f_hi = float(freq_max)
 
-    tick_freqs = generate_tick_freqs(f_lo, f_hi)
+    majors, minors = generate_tick_freqs(f_lo, f_hi)
 
-    # Compute positions
-    tick_positions = []
-    for freq in tick_freqs:
-        frac = (freq - f_lo) / (f_hi - f_lo + 1e-10)
-        y = int((1.0 - frac) * height)
-        y = max(0, min(height - 1, y))
-        tick_positions.append((freq, y))
-
-    # Measure max label width to position elements
+    # Measure max label width
     max_label_w = 0
-    for freq, y in tick_positions:
+    for freq in majors:
         label = format_freq(freq)
         bbox = font.getbbox(label)
         lw = bbox[2] - bbox[0]
         if lw > max_label_w:
             max_label_w = lw
 
-    hz_bbox = header_font.getbbox("Hz")
-    hz_w = hz_bbox[2] - hz_bbox[0]
-    max_label_w = max(max_label_w, hz_w)
-
-    tick_len = 14
-    gap = 10  # gap between tick and label
-    panel_w = tick_len + gap + max_label_w + 20  # 20 = right padding
+    # Panel dimensions
+    major_tick_len = 20
+    minor_tick_len = 10
+    gap = 8
+    right_pad = 14
+    panel_w = major_tick_len + gap + max_label_w + right_pad + 4
     panel_x = width - panel_w
 
-    # Draw semi-transparent dark background strip on the right
-    bg = Image.new('RGBA', (panel_w, height), (0, 0, 0, 140))
+    # Semi-transparent dark background
+    bg = Image.new('RGBA', (panel_w, height), (5, 8, 5, 160))
     img.paste(bg, (panel_x, 0), bg)
-
-    # Recalculate draw after paste
     draw = ImageDraw.Draw(img)
 
-    label_x = panel_x + tick_len + gap
-    label_color = (220, 220, 220, 255)
-    tick_color = (180, 180, 180, 200)
-    dim_color = (140, 140, 140, 255)
+    # Colors — green-tinted telemetry
+    label_color = (180, 210, 180, 255)       # muted green-white
+    major_tick_color = (120, 160, 120, 220)  # dim green
+    minor_tick_color = (60, 80, 60, 140)     # very dim green
+    header_color = (100, 130, 100, 200)      # dim header
+    bracket_color = (80, 110, 80, 180)       # bracket lines
 
-    # Draw "Hz" header at top right
-    hz_x = label_x + (max_label_w - hz_w) // 2
-    draw.text((hz_x, 8), "Hz", fill=dim_color, font=header_font)
+    # Vertical rule line along panel left edge
+    draw.line([(panel_x + 1, 0), (panel_x + 1, height)],
+              fill=bracket_color, width=1)
 
-    # Draw ticks and labels
-    for freq, y in tick_positions:
+    # Header: "FREQ" and "HZ" stacked
+    hdr_x = panel_x + major_tick_len + gap
+    draw.text((hdr_x, 6), "FREQ", fill=header_color, font=small_font)
+    h1_bbox = small_font.getbbox("FREQ")
+    draw.text((hdr_x, 6 + (h1_bbox[3] - h1_bbox[1]) + 2), "HZ", fill=header_color, font=small_font)
+
+    # Draw minor ticks
+    for freq in minors:
+        y = freq_to_y(freq, f_lo, f_hi, height)
+        draw.line([(panel_x + 2, y), (panel_x + 2 + minor_tick_len, y)],
+                  fill=minor_tick_color, width=1)
+
+    # Draw major ticks with labels
+    label_x = panel_x + major_tick_len + gap
+    for freq in majors:
+        y = freq_to_y(freq, f_lo, f_hi, height)
         label = format_freq(freq)
 
-        # Tick mark
-        draw.line([(panel_x, y), (panel_x + tick_len, y)],
-                  fill=tick_color, width=2)
+        # Major tick — thicker
+        draw.line([(panel_x + 2, y), (panel_x + 2 + major_tick_len, y)],
+                  fill=major_tick_color, width=2)
+
+        # Small bracket marks at tick ends
+        draw.line([(panel_x + 2, y - 3), (panel_x + 2, y + 3)],
+                  fill=major_tick_color, width=1)
 
         # Label — right-aligned
         bbox = font.getbbox(label)
         lw = bbox[2] - bbox[0]
         lh = bbox[3] - bbox[1]
-        lx = label_x + (max_label_w - lw)  # right-align
+        lx = label_x + (max_label_w - lw)
         ly = y - lh // 2 - 2
 
-        # Clamp to image bounds
+        # Clamp
         ly = max(2, min(height - lh - 2, ly))
 
         draw.text((lx, ly), label, fill=label_color, font=font)
+
+    # Bottom and top border lines
+    draw.line([(panel_x, 0), (width, 0)], fill=bracket_color, width=1)
+    draw.line([(panel_x, height - 1), (width, height - 1)], fill=bracket_color, width=1)
 
     img.save(output_png)
 
@@ -155,7 +191,7 @@ def main():
     parser.add_argument('--height', type=int, required=True, help='Viewport height')
     parser.add_argument('--freq-min', type=float, required=True)
     parser.add_argument('--freq-max', type=float, required=True)
-    parser.add_argument('--font-size', type=int, default=42)
+    parser.add_argument('--font-size', type=int, default=38)
     args = parser.parse_args()
 
     render_freq_scale(

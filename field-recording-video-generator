@@ -210,6 +210,7 @@ interactive_dialogue() {
     fi
 
     FREQ_GRID=$(ask "Show frequency grid on spectrogram? (y/n)" "y")
+    NORMALIZE_AUDIO=$(ask "Normalize audio to -16 LUFS? (y/n)" "y")
 
     # Output filename
     local default_output="${input_file%.*}_video.mp4"
@@ -255,17 +256,67 @@ prepare_audio() {
     local output="$2"
     local effective_rate="$3"
     local speed_factor="$4"
+    local normalize="$5"
 
-    if [[ "$speed_factor" == "1" ]]; then
-        # No speed change, just ensure 48kHz output
+    local af_chain=""
+
+    if [[ "$speed_factor" != "1" ]]; then
+        af_chain="asetrate=${effective_rate},aresample=48000"
+    fi
+
+    if [[ "$normalize" == "y" || "$normalize" == "Y" || "$normalize" == "yes" ]]; then
+        # Two-pass loudnorm for accurate -16 LUFS targeting
+        local measure_output
+        if [[ -n "$af_chain" ]]; then
+            measure_output=$(ffmpeg -hide_banner -i "$input" \
+                -af "${af_chain},loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json" \
+                -f null - 2>&1)
+        else
+            measure_output=$(ffmpeg -hide_banner -i "$input" \
+                -af "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json" \
+                -f null - 2>&1)
+        fi
+
+        # Extract measured values from JSON in ffmpeg output
+        local measured_values
+        measured_values=$("$PYTHON" -c "
+import sys, json, re
+text = sys.stdin.read()
+# Find the JSON block in ffmpeg output
+m = re.search(r'\{[^{}]+\}', text, re.DOTALL)
+if m:
+    d = json.loads(m.group())
+    print(d['input_i'])
+    print(d['input_tp'])
+    print(d['input_lra'])
+    print(d['input_thresh'])
+else:
+    print('ERROR: Could not parse loudnorm output', file=sys.stderr)
+    sys.exit(1)
+" <<< "$measure_output")
+
+        local measured_i measured_tp measured_lra measured_thresh
+        measured_i=$(echo "$measured_values" | sed -n '1p')
+        measured_tp=$(echo "$measured_values" | sed -n '2p')
+        measured_lra=$(echo "$measured_values" | sed -n '3p')
+        measured_thresh=$(echo "$measured_values" | sed -n '4p')
+
+        local norm_filter="loudnorm=I=-16:TP=-1.5:LRA=11:measured_I=${measured_i}:measured_TP=${measured_tp}:measured_LRA=${measured_lra}:measured_thresh=${measured_thresh}:linear=true"
+
+        if [[ -n "$af_chain" ]]; then
+            af_chain="${af_chain},${norm_filter}"
+        else
+            af_chain="${norm_filter}"
+        fi
+    fi
+
+    if [[ -n "$af_chain" ]]; then
         ffmpeg -y -v warning -i "$input" \
+            -af "$af_chain" \
             -ar 48000 -c:a pcm_s24le "$output"
     else
-        # asetrate reinterprets the sample rate (slows/speeds playback)
-        # aresample then converts to standard 48kHz
         ffmpeg -y -v warning -i "$input" \
-            -af "asetrate=${effective_rate},aresample=48000" \
-            -c:a pcm_s24le "$output"
+            -ar 48000 -c:a pcm_s24le "$output"
     fi
 }
 
@@ -401,7 +452,7 @@ build_ffmpeg_command() {
         "${inputs[@]}" \
         -filter_complex "$filter_complex" \
         -map "[outv]" -map 2:a \
-        -c:v libx264 -preset slow -crf 18 -tune stillimage \
+        -c:v libx264 -preset slow -crf 18 \
         -c:a aac -b:a 256k \
         -r "$fps" \
         -t "$duration" \
@@ -456,7 +507,7 @@ main() {
     # Stage 1: Prepare audio
     echo -e "  ${CYAN}[1/5]${RESET} Preparing audio..."
     local prepared_audio="${TMPDIR}/prepared_audio.wav"
-    prepare_audio "$input_file" "$prepared_audio" "$EFFECTIVE_RATE" "$SPEED_FACTOR"
+    prepare_audio "$input_file" "$prepared_audio" "$EFFECTIVE_RATE" "$SPEED_FACTOR" "$NORMALIZE_AUDIO"
 
     # Stage 2: Render info panel (first, to get auto-sized height)
     echo -e "  ${CYAN}[2/5]${RESET} Rendering info panel..."
