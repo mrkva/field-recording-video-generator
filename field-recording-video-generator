@@ -1,0 +1,463 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ============================================================================
+# field-recording-video-generator
+#
+# Generate a video from a WAV field recording with scrolling logarithmic
+# spectrogram, playback cursor, metadata overlay, and optional photo.
+# ============================================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_DIR="${SCRIPT_DIR}/lib"
+PRESETS_DIR="${SCRIPT_DIR}/presets"
+
+# Colors for terminal output
+BOLD='\033[1m'
+DIM='\033[2m'
+CYAN='\033[36m'
+GREEN='\033[32m'
+YELLOW='\033[33m'
+RED='\033[31m'
+RESET='\033[0m'
+
+# ============================================================================
+# Dependency check
+# ============================================================================
+check_dependencies() {
+    local missing=()
+    command -v ffmpeg  >/dev/null 2>&1 || missing+=(ffmpeg)
+    command -v ffprobe >/dev/null 2>&1 || missing+=(ffprobe)
+    command -v sox     >/dev/null 2>&1 || missing+=(sox)
+    command -v python3 >/dev/null 2>&1 || missing+=(python3)
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo -e "${RED}ERROR: Missing dependencies: ${missing[*]}${RESET}" >&2
+        echo "Install with: apt install ffmpeg sox python3" >&2
+        exit 1
+    fi
+
+    python3 -c "import numpy, scipy, matplotlib, PIL" 2>/dev/null || {
+        echo -e "${RED}ERROR: Missing Python packages.${RESET}" >&2
+        echo "Install with: pip install numpy scipy matplotlib Pillow" >&2
+        exit 1
+    }
+}
+
+# ============================================================================
+# Usage
+# ============================================================================
+usage() {
+    cat <<'EOF'
+Usage: field-recording-video-generator <input.wav>
+
+Generate a video from a WAV field recording with scrolling spectrogram,
+playback cursor, and metadata overlay.
+
+The program will interactively ask for metadata and settings.
+
+Options:
+  -h, --help    Show this help message
+EOF
+    exit 0
+}
+
+# ============================================================================
+# Parse datetime from filename
+# ============================================================================
+parse_datetime() {
+    python3 -c "
+import re, os, sys
+basename = os.path.splitext(os.path.basename(sys.argv[1]))[0]
+m = re.search(r'(\d{4})(\d{2})(\d{2})[_\-T](\d{2})(\d{2})(\d{2})', basename)
+if m:
+    y,mo,d,h,mi,s = m.groups()
+    if 1990 <= int(y) <= 2099:
+        print(f'{y}-{mo}-{d}T{h}:{mi}:{s}')
+        sys.exit(0)
+m = re.search(r'(?<!\d)(\d{2})(\d{2})(\d{2})[_\-](\d{2})(\d{2})(\d{2})(?!\d)', basename)
+if m:
+    y,mo,d,h,mi,s = m.groups()
+    c = '20' if int(y) < 80 else '19'
+    print(f'{c}{y}-{mo}-{d}T{h}:{mi}:{s}')
+    sys.exit(0)
+print('')
+" "$1"
+}
+
+# ============================================================================
+# Probe audio file
+# ============================================================================
+probe_audio() {
+    local input="$1"
+    AUDIO_SAMPLE_RATE=$(ffprobe -v error -select_streams a:0 \
+        -show_entries stream=sample_rate -of csv=p=0 "$input")
+    AUDIO_CHANNELS=$(ffprobe -v error -select_streams a:0 \
+        -show_entries stream=channels -of csv=p=0 "$input")
+    AUDIO_DURATION=$(ffprobe -v error -select_streams a:0 \
+        -show_entries format=duration -of csv=p=0 "$input")
+    AUDIO_BIT_DEPTH=$(ffprobe -v error -select_streams a:0 \
+        -show_entries stream=bits_per_raw_sample -of csv=p=0 "$input" 2>/dev/null || echo "16")
+
+    # Clean up
+    AUDIO_SAMPLE_RATE="${AUDIO_SAMPLE_RATE%%[[:space:]]}"
+    AUDIO_CHANNELS="${AUDIO_CHANNELS%%[[:space:]]}"
+    AUDIO_DURATION="${AUDIO_DURATION%%[[:space:]]}"
+    AUDIO_BIT_DEPTH="${AUDIO_BIT_DEPTH%%[[:space:]]}"
+
+    if [[ -z "$AUDIO_DURATION" || "$AUDIO_DURATION" == "N/A" ]]; then
+        AUDIO_DURATION=$(sox --info -D "$input" 2>/dev/null || echo "0")
+    fi
+}
+
+# ============================================================================
+# Interactive dialogue
+# ============================================================================
+msg() {
+    # Print to stderr (visible to user, not captured by subshells)
+    echo -e "$@" >&2
+}
+
+ask() {
+    local prompt="$1"
+    local default="${2:-}"
+    local result
+
+    if [[ -n "$default" ]]; then
+        msg -n "${CYAN}${prompt}${RESET} ${DIM}[${default}]${RESET}: "
+    else
+        msg -n "${CYAN}${prompt}${RESET}: "
+    fi
+
+    read -r result
+
+    if [[ -z "$result" ]]; then
+        result="$default"
+    fi
+    echo "$result"
+}
+
+interactive_dialogue() {
+    local input_file="$1"
+    local basename
+    basename=$(basename "$input_file")
+
+    msg ""
+    msg "${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
+    msg "${BOLD}║       FIELD RECORDING VIDEO GENERATOR                ║${RESET}"
+    msg "${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
+    msg ""
+    msg "${DIM}File: ${RESET}${BOLD}${basename}${RESET}"
+    msg "${DIM}Sample rate: ${AUDIO_SAMPLE_RATE} Hz | Channels: ${AUDIO_CHANNELS} | Duration: ${AUDIO_DURATION}s${RESET}"
+    msg ""
+
+    # Date/time auto-detection
+    local detected_datetime
+    detected_datetime=$(parse_datetime "$input_file")
+    if [[ -n "$detected_datetime" ]]; then
+        msg "${GREEN}Detected date/time from filename: ${detected_datetime}${RESET}"
+        META_DATETIME=$(ask "Date/time" "$detected_datetime")
+    else
+        msg "${YELLOW}Could not detect date/time from filename.${RESET}"
+        META_DATETIME=$(ask "Date/time (ISO format, e.g. 2024-03-15T14:30:22)" "")
+    fi
+
+    META_SUBJECT=$(ask "Recorded subject" "")
+    META_RECORDER=$(ask "Recorded with" "")
+    META_LOCATION=$(ask "Location (optional, Enter to skip)" "")
+
+    msg ""
+    msg "${DIM}Playback speed: reinterpret sample rate for ultrasonic content.${RESET}"
+    msg "${DIM}Format: SOURCE:TARGET (e.g. 192000:44100) or divisor (e.g. 4.35)${RESET}"
+    msg "${DIM}Press Enter for normal speed (1x).${RESET}"
+    PLAYBACK_SPEED_INPUT=$(ask "Playback speed" "1x")
+
+    msg ""
+    PRESET=$(ask "Preset (square / reel)" "square")
+    if [[ "$PRESET" != "square" && "$PRESET" != "reel" ]]; then
+        msg "${YELLOW}Unknown preset '${PRESET}', defaulting to square.${RESET}"
+        PRESET="square"
+    fi
+
+    PHOTO_PATH=$(ask "Photo path (optional, Enter to skip)" "")
+    if [[ -n "$PHOTO_PATH" && ! -f "$PHOTO_PATH" ]]; then
+        msg "${YELLOW}Photo file not found: ${PHOTO_PATH}. Skipping.${RESET}"
+        PHOTO_PATH=""
+    fi
+
+    # Output filename
+    local default_output="${input_file%.*}_video.mp4"
+    OUTPUT_FILE=$(ask "Output filename" "$default_output")
+
+    msg ""
+}
+
+# ============================================================================
+# Parse playback speed
+# ============================================================================
+parse_playback_speed() {
+    local input="$1"
+    local orig_sr="$2"
+
+    if [[ "$input" == "1x" || "$input" == "1" || -z "$input" ]]; then
+        SPEED_FACTOR="1"
+        EFFECTIVE_RATE="$orig_sr"
+        PLAYBACK_LABEL="1x (native)"
+        return
+    fi
+
+    # Check for ratio format (SOURCE:TARGET)
+    if [[ "$input" == *":"* ]]; then
+        local source_rate="${input%%:*}"
+        local target_rate="${input##*:}"
+        SPEED_FACTOR=$(python3 -c "print(f'{${source_rate}/${target_rate}:.6f}')")
+        EFFECTIVE_RATE="$target_rate"
+        PLAYBACK_LABEL="${source_rate}Hz → ${target_rate}Hz (${SPEED_FACTOR}× slower)"
+    else
+        # Divisor format
+        SPEED_FACTOR="$input"
+        EFFECTIVE_RATE=$(python3 -c "print(int(${orig_sr} / ${input}))")
+        PLAYBACK_LABEL="${input}× slower"
+    fi
+}
+
+# ============================================================================
+# Prepare audio with playback speed reinterpretation
+# ============================================================================
+prepare_audio() {
+    local input="$1"
+    local output="$2"
+    local effective_rate="$3"
+    local speed_factor="$4"
+
+    if [[ "$speed_factor" == "1" ]]; then
+        # No speed change, just ensure 48kHz output
+        ffmpeg -y -v warning -i "$input" \
+            -ar 48000 -c:a pcm_s24le "$output"
+    else
+        # asetrate reinterprets the sample rate (slows/speeds playback)
+        # aresample then converts to standard 48kHz
+        ffmpeg -y -v warning -i "$input" \
+            -af "asetrate=${effective_rate},aresample=48000" \
+            -c:a pcm_s24le "$output"
+    fi
+}
+
+# ============================================================================
+# Calculate spectrogram dimensions
+# ============================================================================
+calc_spec_dimensions() {
+    local duration="$1"
+    local viewport_w="$2"
+
+    # pixels per second: aim for good detail
+    local pps=200
+    local total_w
+    total_w=$(python3 -c "
+import math
+d = ${duration}
+pps = ${pps}
+w = int(math.ceil(pps * d))
+w = max(w, ${viewport_w})
+w = min(w, 300000)
+print(w)
+")
+    echo "$total_w"
+}
+
+# ============================================================================
+# Build ffmpeg filter graph
+# ============================================================================
+build_ffmpeg_command() {
+    local spec_png="$1"
+    local info_png="$2"
+    local audio="$3"
+    local output="$4"
+    local photo="$5"
+    local spec_total_w="$6"
+    local viewport_w="$7"
+    local spec_h="$8"
+    local info_h="$9"
+    local duration="${10}"
+    local fps="${11}"
+    local video_w="${12}"
+    local video_h="${13}"
+    local photo_band_h="${14}"
+
+    # Scroll rate: pixels per second
+    local scroll_rate
+    scroll_rate=$(python3 -c "print(f'{${spec_total_w} / ${duration}:.6f}')")
+
+    # Half viewport
+    local half_vw
+    half_vw=$(python3 -c "print(${viewport_w} / 2.0)")
+
+    # Crop expression: x = clip(scroll_rate*t - viewport/2, 0, total_w - viewport_w)
+    local crop_x="min(max(0,${scroll_rate}*t-${half_vw}),${spec_total_w}-${viewport_w})"
+
+    # Cursor x position in viewport
+    local cursor_x="(${scroll_rate}*t)-min(max(0,${scroll_rate}*t-${half_vw}),${spec_total_w}-${viewport_w})"
+
+    local filter_complex=""
+    local inputs=()
+    local map_video=""
+
+    inputs+=(-loop 1 -i "$spec_png")    # [0]
+    inputs+=(-loop 1 -i "$info_png")    # [1]
+    inputs+=(-i "$audio")               # [2]
+
+    local photo_idx=""
+    if [[ -n "$photo" ]]; then
+        inputs+=(-loop 1 -i "$photo")   # [3]
+        photo_idx="3"
+    fi
+
+    # Build filter
+    filter_complex="[0:v]crop=w=${viewport_w}:h=${spec_h}:x='${crop_x}':y=0[spec_cropped];"
+    # Cursor: glow (wider, semi-transparent) + bright core line
+    filter_complex+="[spec_cropped]drawbox=x='${cursor_x}-4':y=0:w=9:h=${spec_h}:color=white@0.15:t=fill[spec_glow];"
+    filter_complex+="[spec_glow]drawbox=x='${cursor_x}':y=0:w=2:h=${spec_h}:color=white@0.9:t=fill[spec_cursor];"
+    filter_complex+="[1:v]scale=${viewport_w}:${info_h}[info];"
+
+    if [[ -n "$photo" ]]; then
+        # Photo as bottom band (side panel / split layout)
+        # Scale photo to fill band, preserving aspect with black bars
+        filter_complex+="[${photo_idx}:v]scale=${viewport_w}:${photo_band_h}:force_original_aspect_ratio=decrease,"
+        filter_complex+="pad=${viewport_w}:${photo_band_h}:(ow-iw)/2:(oh-ih)/2:color=black[photo_scaled];"
+
+        filter_complex+="[info][spec_cursor]vstack[top];"
+        filter_complex+="[top][photo_scaled]vstack[combined];"
+        filter_complex+="[combined]format=yuv420p[outv]"
+    else
+        filter_complex+="[info][spec_cursor]vstack[combined];"
+        filter_complex+="[combined]format=yuv420p[outv]"
+    fi
+
+    ffmpeg -y -v warning \
+        "${inputs[@]}" \
+        -filter_complex "$filter_complex" \
+        -map "[outv]" -map 2:a \
+        -c:v libx264 -preset slow -crf 18 -tune stillimage \
+        -c:a aac -b:a 256k \
+        -r "$fps" \
+        -t "$duration" \
+        -movflags +faststart \
+        -shortest \
+        "$output"
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+main() {
+    # Parse args
+    if [[ $# -lt 1 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+        usage
+    fi
+
+    local input_file="$1"
+
+    if [[ ! -f "$input_file" ]]; then
+        echo -e "${RED}ERROR: File not found: ${input_file}${RESET}" >&2
+        exit 1
+    fi
+
+    check_dependencies
+
+    # Probe audio
+    probe_audio "$input_file"
+
+    # Interactive dialogue
+    interactive_dialogue "$input_file"
+
+    # Parse playback speed
+    parse_playback_speed "$PLAYBACK_SPEED_INPUT" "$AUDIO_SAMPLE_RATE"
+
+    # Load preset
+    source "${PRESETS_DIR}/${PRESET}.conf"
+
+    # Adjust spectrogram height: use full space when no photo
+    if [[ -z "$PHOTO_PATH" ]]; then
+        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT))
+    else
+        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT - PHOTO_BAND_HEIGHT))
+    fi
+
+    # Calculate effective duration
+    local effective_duration
+    effective_duration=$(python3 -c "print(f'{${AUDIO_DURATION} * ${SPEED_FACTOR}:.6f}')")
+
+    echo -e "${DIM}──────────────────────────────────────────────────────${RESET}"
+    echo -e "${BOLD}Generating video...${RESET}"
+    echo -e "${DIM}Effective duration: ${effective_duration}s | Preset: ${PRESET} (${VIDEO_WIDTH}x${VIDEO_HEIGHT})${RESET}"
+    echo ""
+
+    # Create temp directory
+    TMPDIR=$(mktemp -d /tmp/frvg.XXXXXX)
+    trap "rm -rf ${TMPDIR}" EXIT
+
+    # Stage 1: Prepare audio
+    echo -e "  ${CYAN}[1/4]${RESET} Preparing audio..."
+    local prepared_audio="${TMPDIR}/prepared_audio.wav"
+    prepare_audio "$input_file" "$prepared_audio" "$EFFECTIVE_RATE" "$SPEED_FACTOR"
+
+    # Stage 2: Generate spectrogram
+    echo -e "  ${CYAN}[2/4]${RESET} Generating spectrogram..."
+    local spec_png="${TMPDIR}/spectrogram.png"
+    local spec_total_w
+    spec_total_w=$(calc_spec_dimensions "$effective_duration" "$VIDEO_WIDTH")
+
+    python3 "${LIB_DIR}/generate_spectrogram.py" \
+        --input "$input_file" \
+        --output "$spec_png" \
+        --width "$spec_total_w" \
+        --height "$SPEC_HEIGHT" \
+        --colormap inferno \
+        --freq-min 20 \
+        --original-sr "$AUDIO_SAMPLE_RATE" \
+        --dynamic-range 90
+
+    # Stage 3: Render info panel
+    echo -e "  ${CYAN}[3/4]${RESET} Rendering info panel..."
+    local info_png="${TMPDIR}/info_panel.png"
+    python3 "${LIB_DIR}/render_info_panel.py" \
+        --output "$info_png" \
+        --width "$VIDEO_WIDTH" \
+        --height "$INFO_PANEL_HEIGHT" \
+        --font-size "$INFO_FONT_SIZE" \
+        --line-spacing "$INFO_LINE_SPACING" \
+        --filename "$input_file" \
+        --subject "$META_SUBJECT" \
+        --recorder "$META_RECORDER" \
+        --datetime "$META_DATETIME" \
+        --location "$META_LOCATION" \
+        --playback-speed "$PLAYBACK_LABEL"
+
+    # Stage 4: Compose video
+    echo -e "  ${CYAN}[4/4]${RESET} Compositing video with ffmpeg..."
+    build_ffmpeg_command \
+        "$spec_png" \
+        "$info_png" \
+        "$prepared_audio" \
+        "$OUTPUT_FILE" \
+        "$PHOTO_PATH" \
+        "$spec_total_w" \
+        "$VIDEO_WIDTH" \
+        "$SPEC_HEIGHT" \
+        "$INFO_PANEL_HEIGHT" \
+        "$effective_duration" \
+        "$FPS" \
+        "$VIDEO_WIDTH" \
+        "$VIDEO_HEIGHT" \
+        "$PHOTO_BAND_HEIGHT"
+
+    echo ""
+    echo -e "${GREEN}${BOLD}Done!${RESET} Output: ${OUTPUT_FILE}"
+
+    # Print file info
+    local filesize
+    filesize=$(du -h "$OUTPUT_FILE" | cut -f1)
+    echo -e "${DIM}Size: ${filesize}${RESET}"
+}
+
+main "$@"
