@@ -76,6 +76,8 @@ def render_info_panel(output_png, width, font_size,
     entries = []
     if filename:
         entries.append(("FILE", os.path.basename(filename).upper()))
+    if sample_info:
+        entries.append(("SMPL", sample_info.upper()))
     if subject:
         entries.append(("SUBJ", subject.upper()))
     if recorder:
@@ -84,8 +86,6 @@ def render_info_panel(output_png, width, font_size,
         entries.append(("DATE", datetime_str.upper()))
     if location:
         entries.append(("LOC", location.upper()))
-    if sample_info:
-        entries.append(("SMPL", sample_info.upper()))
     if playback_speed and not playback_speed.upper().startswith("1X"):
         entries.append(("SPEED", playback_speed.upper()))
 

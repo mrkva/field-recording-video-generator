@@ -71,21 +71,12 @@ def apply_retro_filter(img, widget_size):
     arr = np.array(cropped).astype(float)
     gray = (0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2])
 
-    # Mild pixelate — keep readable
-    pixel_size = max(2, widget_size // 90)
-    for py in range(0, widget_size, pixel_size):
-        for px in range(0, widget_size, pixel_size):
-            block = gray[py:py + pixel_size, px:px + pixel_size]
-            avg = block.mean()
-            gray[py:py + pixel_size, px:px + pixel_size] = avg
-
-    # Boost contrast
+    # High contrast + darken to match dark video aesthetic
     g_min, g_max = gray.min(), gray.max()
     if g_max > g_min:
-        gray = ((gray - g_min) / (g_max - g_min) * 255).clip(0, 255)
-
-    # Quantize to fewer shades (but more than before for readability)
-    gray = (gray / 16).astype(int) * 16
+        gray = ((gray - g_min) / (g_max - g_min))
+        # Apply gamma curve to darken midtones
+        gray = np.power(gray, 1.8) * 180  # max brightness ~180 instead of 255
     gray = gray.clip(0, 255).astype(np.uint8)
 
     result = np.stack([gray, gray, gray], axis=-1)
