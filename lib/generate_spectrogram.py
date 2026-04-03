@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
-"""Generate a high-precision logarithmic spectrogram as a wide PNG image."""
+"""Generate a high-precision linear spectrogram as a wide PNG image."""
 
 import argparse
 import sys
 import numpy as np
 from scipy.io import wavfile
 from scipy.signal import spectrogram as scipy_spectrogram
-from scipy.interpolate import interp1d
 import matplotlib
 matplotlib.use('Agg')
-import matplotlib.cm as cm
+from PIL import Image, ImageDraw, ImageFont
 
 
 def load_audio_mono(path):
     """Load WAV file and mix to mono float64."""
     sr, data = wavfile.read(path)
-    # Convert to float64
     if data.dtype == np.int16:
         data = data.astype(np.float64) / 32768.0
     elif data.dtype == np.int32:
@@ -27,15 +25,14 @@ def load_audio_mono(path):
     else:
         data = data.astype(np.float64)
 
-    # Mix to mono
     if data.ndim > 1:
         data = data.mean(axis=1)
 
     return sr, data
 
 
-def compute_spectrogram_chunk(audio, sr, nperseg, hop, freq_min, freq_max, height):
-    """Compute log-frequency spectrogram for a chunk of audio."""
+def compute_spectrogram_chunk(audio, sr, nperseg, hop):
+    """Compute linear-frequency spectrogram for a chunk of audio."""
     f, t, Sxx = scipy_spectrogram(
         audio,
         fs=sr,
@@ -46,23 +43,10 @@ def compute_spectrogram_chunk(audio, sr, nperseg, hop, freq_min, freq_max, heigh
         mode='magnitude'
     )
 
-    # Convert to power and then dB
     Sxx = Sxx ** 2
     Sxx_dB = 10.0 * np.log10(Sxx + 1e-12)
 
-    # Build log-frequency axis
-    f_min = max(freq_min, f[1])  # avoid 0 Hz for log scale
-    f_max = min(freq_max, f[-1])
-    log_freqs = np.logspace(np.log10(f_min), np.log10(f_max), height)
-
-    # Interpolate to log frequency scale (vectorized)
-    Sxx_log = np.zeros((height, Sxx_dB.shape[1]), dtype=np.float32)
-    for col_idx in range(Sxx_dB.shape[1]):
-        interp_fn = interp1d(f, Sxx_dB[:, col_idx], bounds_error=False,
-                             fill_value=-120.0, kind='linear')
-        Sxx_log[:, col_idx] = interp_fn(log_freqs)
-
-    return Sxx_log, log_freqs, t
+    return Sxx_dB, f, t
 
 
 def generate_spectrogram(input_wav, output_png, width, height,
@@ -90,14 +74,10 @@ def generate_spectrogram(input_wav, output_png, width, height,
         nperseg = 2048
     hop = nperseg // 8  # 87.5% overlap
 
-    # Calculate target width
-    total_frames = int(np.ceil(len(audio) / hop))
-    pixels_per_second = max(100, min(400, width / max(duration, 0.1)))
-
     # Process in chunks for memory efficiency
     chunk_duration = 30  # seconds
     chunk_samples = int(chunk_duration * sr)
-    overlap_samples = nperseg  # overlap between chunks
+    overlap_samples = nperseg
 
     all_columns = []
     pos = 0
@@ -107,19 +87,16 @@ def generate_spectrogram(input_wav, output_png, width, height,
         chunk = audio[pos:end]
 
         if len(chunk) < nperseg:
-            # Pad short final chunk
             chunk = np.pad(chunk, (0, nperseg - len(chunk)))
 
-        Sxx_log, log_freqs, t = compute_spectrogram_chunk(
-            chunk, sr, nperseg, hop, freq_min, freq_max, height
-        )
+        Sxx_dB, f, t = compute_spectrogram_chunk(chunk, sr, nperseg, hop)
 
         # Trim overlap columns (except for first chunk)
-        if pos > 0 and Sxx_log.shape[1] > 0:
+        if pos > 0 and Sxx_dB.shape[1] > 0:
             overlap_cols = int(np.ceil(overlap_samples / hop))
-            Sxx_log = Sxx_log[:, overlap_cols:]
+            Sxx_dB = Sxx_dB[:, overlap_cols:]
 
-        all_columns.append(Sxx_log)
+        all_columns.append(Sxx_dB)
         pos += chunk_samples
 
     if not all_columns:
@@ -129,8 +106,15 @@ def generate_spectrogram(input_wav, output_png, width, height,
     # Concatenate all chunks
     full_spec = np.concatenate(all_columns, axis=1)
 
-    # Resize to target width
-    from PIL import Image
+    # Crop to freq range
+    freq_bin_min = 0
+    freq_bin_max = len(f)
+    if freq_min > 0:
+        freq_bin_min = max(0, np.searchsorted(f, freq_min))
+    if freq_max < f[-1]:
+        freq_bin_max = min(len(f), np.searchsorted(f, freq_max) + 1)
+    full_spec = full_spec[freq_bin_min:freq_bin_max, :]
+    f_cropped = f[freq_bin_min:freq_bin_max]
 
     # Normalize to dynamic range
     vmax = full_spec.max()
@@ -140,7 +124,7 @@ def generate_spectrogram(input_wav, output_png, width, height,
 
     # Apply colormap
     cmap = matplotlib.colormaps.get_cmap(colormap_name)
-    colored = cmap(full_spec)  # RGBA float [0,1]
+    colored = cmap(full_spec)
     colored = (colored[:, :, :3] * 255).astype(np.uint8)
 
     # Flip vertically (low freq at bottom)
@@ -151,55 +135,57 @@ def generate_spectrogram(input_wav, output_png, width, height,
     img = img.resize((width, height), Image.LANCZOS)
 
     # Draw frequency axis ticks on the left edge
-    from PIL import ImageDraw, ImageFont
     draw = ImageDraw.Draw(img)
 
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 11)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 14)
     except Exception:
         font = ImageFont.load_default()
 
-    # Frequency tick marks (using original/display frequencies)
+    # Linear frequency tick marks
     freq_ratio = freq_max_display / freq_max if freq_max > 0 else 1.0
-    tick_freqs = []
-    f_val = 50
-    while f_val <= freq_max_display:
-        tick_freqs.append(f_val)
-        if f_val < 200:
-            f_val += 50
-        elif f_val < 1000:
-            f_val += 200
-        elif f_val < 10000:
-            f_val += 2000
-        elif f_val < 50000:
-            f_val += 10000
-        else:
-            f_val += 25000
+    f_display_min = f_cropped[0] * freq_ratio
+    f_display_max = f_cropped[-1] * freq_ratio
 
-    f_min_log = np.log10(max(freq_min, 20))
-    f_max_log = np.log10(freq_max_display)
+    # Generate nice tick values
+    tick_freqs = []
+    # Choose tick spacing based on range
+    f_range = f_display_max - f_display_min
+    if f_range > 100000:
+        step = 20000
+    elif f_range > 40000:
+        step = 10000
+    elif f_range > 15000:
+        step = 5000
+    elif f_range > 5000:
+        step = 2000
+    elif f_range > 2000:
+        step = 500
+    else:
+        step = 100
+
+    f_val = step
+    while f_val <= f_display_max:
+        if f_val >= f_display_min:
+            tick_freqs.append(f_val)
+        f_val += step
 
     for freq in tick_freqs:
-        if freq < freq_min * freq_ratio or freq > freq_max_display:
-            continue
-        # Position in image (log scale, flipped)
-        frac = (np.log10(freq) - f_min_log) / (f_max_log - f_min_log + 1e-10)
+        # Linear position (flipped)
+        frac = (freq - f_display_min) / (f_display_max - f_display_min + 1e-10)
         y = int((1.0 - frac) * height)
         y = max(0, min(height - 1, y))
 
-        # Tick line
-        draw.line([(0, y), (5, y)], fill=(200, 200, 200), width=1)
+        draw.line([(0, y), (6, y)], fill=(200, 200, 200), width=1)
 
-        # Label
         if freq >= 1000:
             label = f"{freq/1000:.0f}k"
         else:
             label = f"{freq:.0f}"
-        draw.text((7, y - 6), label, fill=(180, 180, 180), font=font)
+        draw.text((8, y - 8), label, fill=(180, 180, 180), font=font)
 
     img.save(output_png, optimize=True)
 
-    # Return metadata
     return {
         'width': width,
         'height': height,
@@ -210,7 +196,7 @@ def generate_spectrogram(input_wav, output_png, width, height,
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate logarithmic spectrogram PNG')
+    parser = argparse.ArgumentParser(description='Generate spectrogram PNG')
     parser.add_argument('--input', required=True, help='Input WAV file')
     parser.add_argument('--output', required=True, help='Output PNG file')
     parser.add_argument('--width', type=int, required=True, help='Image width in pixels')
@@ -234,7 +220,6 @@ def main():
         original_sr=args.original_sr if args.original_sr > 0 else None,
     )
 
-    # Output metadata as key=value for shell consumption
     for k, v in info.items():
         print(f"{k}={v}")
 

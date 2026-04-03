@@ -53,10 +53,10 @@ def render_info_panel(output_png, width, height, font_size, line_spacing,
         font = ImageFont.load_default()
         font_bold = font
 
-    text_color = (190, 190, 190)
-    label_color = (110, 110, 110)
-    margin_left = 24
-    margin_top = 16
+    text_color = (220, 220, 220)
+    label_color = (130, 130, 130)
+    margin_left = 32
+    margin_top = 24
 
     lines = []
     if filename:

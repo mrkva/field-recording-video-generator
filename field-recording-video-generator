@@ -277,6 +277,39 @@ print(w)
 # ============================================================================
 # Build ffmpeg filter graph
 # ============================================================================
+generate_cursor_image() {
+    local output="$1"
+    local height="$2"
+    "$PYTHON" -c "
+from PIL import Image, ImageFilter
+import numpy as np
+# Cursor: bright core with glow
+w = 21
+h = ${height}
+img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+pixels = np.array(img)
+# Glow layers (symmetric around center at x=10)
+for dx in range(-10, 11):
+    dist = abs(dx)
+    if dist <= 1:
+        alpha = 240
+        r, g, b = 0, 255, 120
+    elif dist <= 3:
+        alpha = 80
+        r, g, b = 200, 255, 220
+    elif dist <= 6:
+        alpha = 35
+        r, g, b = 255, 255, 255
+    else:
+        alpha = 12
+        r, g, b = 255, 255, 255
+    x = 10 + dx
+    if 0 <= x < w:
+        pixels[:, x] = [r, g, b, alpha]
+Image.fromarray(pixels).save('${output}')
+"
+}
+
 build_ffmpeg_command() {
     local spec_png="$1"
     local info_png="$2"
@@ -293,6 +326,10 @@ build_ffmpeg_command() {
     local video_h="${13}"
     local photo_band_h="${14}"
 
+    # Generate cursor image
+    local cursor_png="${TMPDIR}/cursor.png"
+    generate_cursor_image "$cursor_png" "$spec_h"
+
     # Scroll rate: pixels per second
     local scroll_rate
     scroll_rate=$("$PYTHON" -c "print(f'{${spec_total_w} / ${duration}:.6f}')")
@@ -304,36 +341,33 @@ build_ffmpeg_command() {
     # Crop expression: x = clip(scroll_rate*t - viewport/2, 0, total_w - viewport_w)
     local crop_x="min(max(0,${scroll_rate}*t-${half_vw}),${spec_total_w}-${viewport_w})"
 
-    # Cursor x position in viewport
-    local cursor_x="(${scroll_rate}*t)-min(max(0,${scroll_rate}*t-${half_vw}),${spec_total_w}-${viewport_w})"
+    # Cursor x position in viewport (for overlay filter, which supports dynamic expressions)
+    local cursor_x="(${scroll_rate}*t)-min(max(0,${scroll_rate}*t-${half_vw}),${spec_total_w}-${viewport_w})-10"
 
     local filter_complex=""
     local inputs=()
-    local map_video=""
 
-    inputs+=(-loop 1 -i "$spec_png")    # [0]
-    inputs+=(-loop 1 -i "$info_png")    # [1]
-    inputs+=(-i "$audio")               # [2]
+    inputs+=(-loop 1 -i "$spec_png")     # [0] spectrogram
+    inputs+=(-loop 1 -i "$info_png")     # [1] info panel
+    inputs+=(-i "$audio")                # [2] audio
+    inputs+=(-loop 1 -i "$cursor_png")   # [3] cursor
 
+    local next_idx=4
     local photo_idx=""
     if [[ -n "$photo" ]]; then
-        inputs+=(-loop 1 -i "$photo")   # [3]
-        photo_idx="3"
+        inputs+=(-loop 1 -i "$photo")    # [4]
+        photo_idx="$next_idx"
     fi
 
-    # Build filter
+    # Build filter: crop spectrogram, overlay cursor, stack with info panel
     filter_complex="[0:v]crop=w=${viewport_w}:h=${spec_h}:x='${crop_x}':y=0[spec_cropped];"
-    # Cursor: glow (wider, semi-transparent) + bright core line
-    filter_complex+="[spec_cropped]drawbox=x='${cursor_x}-4':y=0:w=9:h=${spec_h}:color=white@0.15:t=fill[spec_glow];"
-    filter_complex+="[spec_glow]drawbox=x='${cursor_x}':y=0:w=2:h=${spec_h}:color=white@0.9:t=fill[spec_cursor];"
+    filter_complex+="[3:v]loop=-1:size=1[cur_loop];"
+    filter_complex+="[spec_cropped][cur_loop]overlay=x='${cursor_x}':y=0:shortest=1[spec_cursor];"
     filter_complex+="[1:v]scale=${viewport_w}:${info_h}[info];"
 
     if [[ -n "$photo" ]]; then
-        # Photo as bottom band (side panel / split layout)
-        # Scale photo to fill band, preserving aspect with black bars
         filter_complex+="[${photo_idx}:v]scale=${viewport_w}:${photo_band_h}:force_original_aspect_ratio=decrease,"
         filter_complex+="pad=${viewport_w}:${photo_band_h}:(ow-iw)/2:(oh-ih)/2:color=black[photo_scaled];"
-
         filter_complex+="[info][spec_cursor]vstack[top];"
         filter_complex+="[top][photo_scaled]vstack[combined];"
         filter_complex+="[combined]format=yuv420p[outv]"
