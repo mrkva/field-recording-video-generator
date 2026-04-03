@@ -34,7 +34,8 @@ def parse_datetime_from_filename(filename):
 
 def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
-                      location="", playback_speed="", coordinates=""):
+                      location="", playback_speed="", coordinates="",
+                      sample_info=""):
     """Render info panel — NASA/telemetry camera overlay aesthetic.
 
     All caps, monospace, tight layout with technical formatting.
@@ -70,67 +71,65 @@ def render_info_panel(output_png, width, font_size,
     line_height = font.getbbox("AY")[3] - font.getbbox("AY")[1] + 2
 
     # Build entries — all uppercase
+    # Label column is 7 chars wide (padded with spaces) for alignment
+    label_width = 7
     entries = []
     if filename:
-        entries.append(("FILE  ", os.path.basename(filename).upper()))
+        entries.append(("FILE", os.path.basename(filename).upper()))
     if subject:
-        entries.append(("SUBJ  ", subject.upper()))
+        entries.append(("SUBJ", subject.upper()))
     if recorder:
-        entries.append(("REC   ", recorder.upper()))
+        entries.append(("EQUIP", recorder.upper()))
     if datetime_str:
-        entries.append(("DATE  ", datetime_str.upper()))
+        entries.append(("DATE", datetime_str.upper()))
     if location:
-        entries.append(("LOC   ", location.upper()))
+        entries.append(("LOC", location.upper()))
+    if sample_info:
+        entries.append(("SMPL", sample_info.upper()))
     if playback_speed and not playback_speed.upper().startswith("1X"):
-        entries.append(("SPEED  ", playback_speed.upper()))
+        entries.append(("SPEED", playback_speed.upper()))
 
     if not entries:
         entries.append(("", ""))
 
-    # Wrap long lines
-    all_lines = []  # list of (label_or_none, text)
+    # Compute label column pixel width (fixed for alignment)
+    label_col_text = "X" * label_width
+    label_col_px = font.getlength(label_col_text)
+    value_x = padding_x + label_col_px
+
+    max_value_w = width - value_x - padding_x
+
+    # Wrap long values
+    all_lines = []  # list of (label_or_none, value_text)
     for label, value in entries:
-        full = label + value
         current = ""
         is_first = True
-        for ch in full:
+        for ch in value:
             test = current + ch
-            if font.getlength(test) > max_text_w and current:
-                all_lines.append((is_first, current))
+            if font.getlength(test) > max_value_w and current:
+                all_lines.append((label if is_first else None, current))
                 current = ch
                 is_first = False
             else:
                 current = test
         if current:
-            all_lines.append((is_first, current))
+            all_lines.append((label if is_first else None, current))
 
     total_h = 2 * padding_y + len(all_lines) * line_height + (len(entries) - 1) * line_gap + 2
     img = Image.new('RGB', (width, total_h), color=bg_color)
     draw = ImageDraw.Draw(img)
 
     y = padding_y
-    entry_idx = 0
-    line_in_entry = 0
-    for i, (is_first, text) in enumerate(all_lines):
-        if is_first and i > 0:
+    for i, (label, text) in enumerate(all_lines):
+        if label is not None and i > 0:
             y += line_gap  # gap between entries
 
-        # Split label from value on first line of each entry
-        if is_first:
-            # Find the double-space separator between label and value
-            sep_pos = text.find("  ")
-            if sep_pos >= 0:
-                label_part = text[:sep_pos + 2]
-                value_part = text[sep_pos + 2:]
-                draw.text((padding_x, y), label_part, fill=label_color, font=font)
-                lw = font.getlength(label_part)
-                draw.text((padding_x + lw, y), value_part, fill=value_color, font=font)
-            else:
-                draw.text((padding_x, y), text, fill=value_color, font=font)
-        else:
-            # Continuation line — indent to match value position
-            draw.text((padding_x, y), text, fill=value_color, font=font)
+        if label is not None:
+            # Draw label padded to fixed column
+            padded_label = label.ljust(label_width)
+            draw.text((padding_x, y), padded_label, fill=label_color, font=font)
 
+        draw.text((value_x, y), text, fill=value_color, font=font)
         y += line_height
 
     # Render map widget in top-right corner if coordinates provided
@@ -173,6 +172,7 @@ def main():
     parser.add_argument('--datetime', default='')
     parser.add_argument('--location', default='')
     parser.add_argument('--playback-speed', default='')
+    parser.add_argument('--sample-info', default='')
     parser.add_argument('--coordinates', default='')
 
     args = parser.parse_args()
@@ -195,6 +195,7 @@ def main():
         datetime_str=datetime_str,
         location=args.location,
         playback_speed=args.playback_speed,
+        sample_info=args.sample_info,
         coordinates=args.coordinates,
     )
 

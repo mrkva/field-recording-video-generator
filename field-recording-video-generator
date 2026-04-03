@@ -539,6 +539,7 @@ main() {
         --datetime "$META_DATETIME" \
         --location "$META_LOCATION" \
         --playback-speed "$PLAYBACK_LABEL" \
+        --sample-info "${AUDIO_SAMPLE_RATE}HZ ${AUDIO_BIT_DEPTH}BIT" \
         --coordinates "$META_COORDINATES")
 
     # Extract auto-calculated panel height

@@ -98,14 +98,14 @@ def render_map_widget(lat, lon, widget_size=180, font_size=0):
     if font_size <= 0:
         font_size = max(12, widget_size // 10)
 
-    result = fetch_tiles(lat, lon, zoom=13)
+    result = fetch_tiles(lat, lon, zoom=14)
     if result is None:
         return None
 
     canvas, center_x, center_y = result
 
-    # Crop centered on exact location
-    half = widget_size  # use a larger crop area for context
+    # Crop centered on exact location — tighter crop for more zoom
+    half = widget_size * 3 // 4
     cropped = canvas.crop((
         center_x - half, center_y - half,
         center_x + half, center_y + half
@@ -115,14 +115,14 @@ def render_map_widget(lat, lon, widget_size=180, font_size=0):
     img = apply_retro_filter(cropped, widget_size)
     draw = ImageDraw.Draw(img)
 
-    # Grid lines (faint)
-    grid_spacing = widget_size // 5
+    # Grid lines — 4 divisions so center line aligns with crosshair
+    grid_spacing = widget_size // 4
     for gx in range(grid_spacing, widget_size, grid_spacing):
         draw.line([(gx, 0), (gx, widget_size - 1)], fill=(60, 60, 60), width=1)
     for gy in range(grid_spacing, widget_size, grid_spacing):
         draw.line([(0, gy), (widget_size - 1, gy)], fill=(60, 60, 60), width=1)
 
-    # Crosshair at center
+    # Crosshair at center (exactly on grid intersection)
     cx, cy = widget_size // 2, widget_size // 2
     xh = (255, 255, 255)
     r = max(10, widget_size // 14)
