@@ -106,16 +106,6 @@ def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=3
     if font is None:
         font = ImageFont.load_default()
 
-    small_font = None
-    for fp in font_paths:
-        try:
-            small_font = ImageFont.truetype(fp, int(font_size * 0.55))
-            break
-        except Exception:
-            continue
-    if small_font is None:
-        small_font = font
-
     img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
@@ -182,13 +172,6 @@ def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=3
 
         draw_outlined_text(draw, lx, ly, label, font,
                            fill=text_color, outline=outline_color, thickness=3)
-
-    # "FREQ HZ" header at top right — small, dim
-    hdr_bbox = small_font.getbbox("FREQ HZ")
-    hdr_w = hdr_bbox[2] - hdr_bbox[0]
-    hdr_x = label_right - hdr_w
-    draw_outlined_text(draw, hdr_x, 8, "FREQ HZ", small_font,
-                       fill=dim_text_color, outline=outline_color, thickness=2)
 
     img.save(output_png)
 
