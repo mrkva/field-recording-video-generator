@@ -11,13 +11,22 @@ def parse_datetime_from_filename(filename):
     """Extract date/time from common field recorder filename patterns.
 
     Supported patterns:
+    - 2026-03-08T07_47_03 (ISO with underscored time)
     - YYYYMMDD_HHMMSS / YYYYMMDD-HHMMSS
     - YYMMDD_HHMMSS / YYMMDD-HHMMSS
     - Prefixed variants: ZOOM0001_YYYYMMDD_HHMMSS, SM4_YYYYMMDD_HHMMSS, etc.
     """
     basename = os.path.splitext(os.path.basename(filename))[0]
 
-    # Try YYYYMMDD_HHMMSS (8+6 digits)
+    # Try ISO with separators: 2026-03-08T07_47_03
+    m = re.search(r'(\d{4})-(\d{2})-(\d{2})[T_ \-](\d{2})[_\-:](\d{2})[_\-:](\d{2})', basename)
+    if m:
+        y, mo, d, h, mi, s = m.groups()
+        y_int = int(y)
+        if 1990 <= y_int <= 2099:
+            return f"{y}-{mo}-{d}T{h}:{mi}:{s}"
+
+    # Try compact YYYYMMDD_HHMMSS (8+6 digits)
     m = re.search(r'(\d{4})(\d{2})(\d{2})[_\-T](\d{2})(\d{2})(\d{2})', basename)
     if m:
         y, mo, d, h, mi, s = m.groups()

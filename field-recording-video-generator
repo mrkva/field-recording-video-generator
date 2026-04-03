@@ -78,12 +78,21 @@ parse_datetime() {
     "$PYTHON" -c "
 import re, os, sys
 basename = os.path.splitext(os.path.basename(sys.argv[1]))[0]
+# ISO format with separators: 2026-03-08T07_47_03 or 2026-03-08T07-47-03
+m = re.search(r'(\d{4})-(\d{2})-(\d{2})[T_\- ](\d{2})[_\-:](\d{2})[_\-:](\d{2})', basename)
+if m:
+    y,mo,d,h,mi,s = m.groups()
+    if 1990 <= int(y) <= 2099:
+        print(f'{y}-{mo}-{d}T{h}:{mi}:{s}')
+        sys.exit(0)
+# Compact format: YYYYMMDD_HHMMSS or YYYYMMDDTHHMMSS
 m = re.search(r'(\d{4})(\d{2})(\d{2})[_\-T](\d{2})(\d{2})(\d{2})', basename)
 if m:
     y,mo,d,h,mi,s = m.groups()
     if 1990 <= int(y) <= 2099:
         print(f'{y}-{mo}-{d}T{h}:{mi}:{s}')
         sys.exit(0)
+# Short year: YYMMDD_HHMMSS
 m = re.search(r'(?<!\d)(\d{2})(\d{2})(\d{2})[_\-](\d{2})(\d{2})(\d{2})(?!\d)', basename)
 if m:
     y,mo,d,h,mi,s = m.groups()
