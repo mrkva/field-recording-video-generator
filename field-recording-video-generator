@@ -342,6 +342,7 @@ build_ffmpeg_command() {
     local video_w="${12}"
     local video_h="${13}"
     local photo_band_h="${14}"
+    local freq_scale_png="${15}"
 
     # Generate cursor image
     local cursor_png="${TMPDIR}/cursor.png"
@@ -364,32 +365,35 @@ build_ffmpeg_command() {
     local filter_complex=""
     local inputs=()
 
-    inputs+=(-loop 1 -i "$spec_png")     # [0] spectrogram
-    inputs+=(-loop 1 -i "$info_png")     # [1] info panel
-    inputs+=(-i "$audio")                # [2] audio
-    inputs+=(-loop 1 -i "$cursor_png")   # [3] cursor
+    inputs+=(-loop 1 -i "$spec_png")       # [0] spectrogram
+    inputs+=(-loop 1 -i "$info_png")       # [1] info panel
+    inputs+=(-i "$audio")                  # [2] audio
+    inputs+=(-loop 1 -i "$cursor_png")     # [3] cursor
+    inputs+=(-loop 1 -i "$freq_scale_png") # [4] frequency scale overlay
 
-    local next_idx=4
+    local next_idx=5
     local photo_idx=""
     if [[ -n "$photo" ]]; then
-        inputs+=(-loop 1 -i "$photo")    # [4]
+        inputs+=(-loop 1 -i "$photo")      # [5]
         photo_idx="$next_idx"
     fi
 
-    # Build filter: crop spectrogram, overlay cursor, stack with info panel
+    # Build filter: crop spectrogram, overlay cursor, overlay freq scale, stack with info panel
     filter_complex="[0:v]crop=w=${viewport_w}:h=${spec_h}:x='${crop_x}':y=0[spec_cropped];"
     filter_complex+="[3:v]loop=-1:size=1[cur_loop];"
     filter_complex+="[spec_cropped][cur_loop]overlay=x='${cursor_x}':y=0:shortest=1[spec_cursor];"
+    filter_complex+="[4:v]loop=-1:size=1[scale_loop];"
+    filter_complex+="[spec_cursor][scale_loop]overlay=x=0:y=0:shortest=1[spec_final];"
     filter_complex+="[1:v]scale=${viewport_w}:${info_h}[info];"
 
     if [[ -n "$photo" ]]; then
         filter_complex+="[${photo_idx}:v]scale=${viewport_w}:${photo_band_h}:force_original_aspect_ratio=decrease,"
         filter_complex+="pad=${viewport_w}:${photo_band_h}:(ow-iw)/2:(oh-ih)/2:color=black[photo_scaled];"
-        filter_complex+="[info][spec_cursor]vstack[top];"
+        filter_complex+="[info][spec_final]vstack[top];"
         filter_complex+="[top][photo_scaled]vstack[combined];"
         filter_complex+="[combined]format=yuv420p[outv]"
     else
-        filter_complex+="[info][spec_cursor]vstack[combined];"
+        filter_complex+="[info][spec_final]vstack[combined];"
         filter_complex+="[combined]format=yuv420p[outv]"
     fi
 
@@ -450,12 +454,12 @@ main() {
     trap "rm -rf ${TMPDIR}" EXIT
 
     # Stage 1: Prepare audio
-    echo -e "  ${CYAN}[1/4]${RESET} Preparing audio..."
+    echo -e "  ${CYAN}[1/5]${RESET} Preparing audio..."
     local prepared_audio="${TMPDIR}/prepared_audio.wav"
     prepare_audio "$input_file" "$prepared_audio" "$EFFECTIVE_RATE" "$SPEED_FACTOR"
 
     # Stage 2: Render info panel (first, to get auto-sized height)
-    echo -e "  ${CYAN}[2/4]${RESET} Rendering info panel..."
+    echo -e "  ${CYAN}[2/5]${RESET} Rendering info panel..."
     local info_png="${TMPDIR}/info_panel.png"
     local panel_output
     panel_output=$("$PYTHON" "${LIB_DIR}/render_info_panel.py" \
@@ -482,7 +486,7 @@ main() {
     fi
 
     # Stage 3: Generate spectrogram
-    echo -e "  ${CYAN}[3/4]${RESET} Generating spectrogram..."
+    echo -e "  ${CYAN}[3/5]${RESET} Generating spectrogram..."
     local spec_png="${TMPDIR}/spectrogram.png"
     local spec_total_w
     spec_total_w=$(calc_spec_dimensions "$effective_duration" "$VIDEO_WIDTH")
@@ -504,8 +508,19 @@ main() {
         $grid_flag \
         --dynamic-range 90
 
-    # Stage 4: Compose video
-    echo -e "  ${CYAN}[4/4]${RESET} Compositing video with ffmpeg..."
+    # Stage 4: Render frequency scale overlay
+    echo -e "  ${CYAN}[4/5]${RESET} Rendering frequency scale overlay..."
+    local freq_scale_png="${TMPDIR}/freq_scale.png"
+    "$PYTHON" "${LIB_DIR}/render_freq_scale.py" \
+        --output "$freq_scale_png" \
+        --width "$VIDEO_WIDTH" \
+        --height "$SPEC_HEIGHT" \
+        --freq-min "$FREQ_MIN" \
+        --freq-max "$FREQ_MAX" \
+        --font-size 42
+
+    # Stage 5: Compose video
+    echo -e "  ${CYAN}[5/5]${RESET} Compositing video with ffmpeg..."
     build_ffmpeg_command \
         "$spec_png" \
         "$info_png" \
@@ -520,7 +535,8 @@ main() {
         "$FPS" \
         "$VIDEO_WIDTH" \
         "$VIDEO_HEIGHT" \
-        "$PHOTO_BAND_HEIGHT"
+        "$PHOTO_BAND_HEIGHT" \
+        "$freq_scale_png"
 
     echo ""
     echo -e "${GREEN}${BOLD}Done!${RESET} Output: ${OUTPUT_FILE}"

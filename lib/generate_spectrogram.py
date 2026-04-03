@@ -8,7 +8,7 @@ from scipy.io import wavfile
 from scipy.signal import spectrogram as scipy_spectrogram
 import matplotlib
 matplotlib.use('Agg')
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 
 
 def load_audio_mono(path):
@@ -134,81 +134,43 @@ def generate_spectrogram(input_wav, output_png, width, height,
     img = Image.fromarray(colored)
     img = img.resize((width, height), Image.LANCZOS)
 
-    # Convert to numpy for grid drawing (much faster for wide images)
-    img_arr = np.array(img)
-
-    # Draw frequency axis ticks on the left edge
-    draw = ImageDraw.Draw(img)
-
-    try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 32)
-    except Exception:
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf", 32)
-        except Exception:
-            font = ImageFont.load_default()
-
-    # Frequency range for labels: use the actual user-requested range
-    f_lo = float(freq_min)
-    f_hi = float(freq_max)
-
-    # Generate nice tick values within the visible range
-    tick_freqs = []
-    f_range = f_hi - f_lo
-    if f_range > 100000:
-        step = 20000
-    elif f_range > 40000:
-        step = 10000
-    elif f_range > 15000:
-        step = 5000
-    elif f_range > 5000:
-        step = 2000
-    elif f_range > 2000:
-        step = 500
-    elif f_range > 500:
-        step = 200
-    else:
-        step = 50
-
-    f_val = step
-    while f_val < f_hi:
-        if f_val > f_lo:
-            tick_freqs.append(f_val)
-        f_val += step
-
-    # Compute tick Y positions
-    tick_positions = []
-    for freq in tick_freqs:
-        frac = (freq - f_lo) / (f_hi - f_lo + 1e-10)
-        y = int((1.0 - frac) * height)
-        y = max(0, min(height - 1, y))
-        tick_positions.append((freq, y))
-
-    # Draw grid lines via numpy (fast for wide images)
+    # Draw frequency grid lines if requested
     if grid:
-        for freq, y in tick_positions:
-            blend = 0.12
-            row = img_arr[y].astype(np.float32)
-            grid_color = np.array([180, 220, 180], dtype=np.float32)
-            img_arr[y] = (row * (1 - blend) + grid_color * blend).astype(np.uint8)
-        # Rebuild PIL image from modified array
-        img = Image.fromarray(img_arr)
-        draw = ImageDraw.Draw(img)
+        img_arr = np.array(img)
 
-    # Draw tick marks + labels on left edge
-    for freq, y in tick_positions:
-        draw.line([(0, y), (12, y)], fill=(220, 220, 220), width=2)
+        f_lo = float(freq_min)
+        f_hi = float(freq_max)
+        f_range = f_hi - f_lo
 
-        if freq >= 1000:
-            label = f"{freq/1000:.0f}K"
+        # Generate tick frequencies (same logic as render_freq_scale.py)
+        if f_range > 100000:
+            step = 10000
+        elif f_range > 40000:
+            step = 5000
+        elif f_range > 10000:
+            step = 1000
+        elif f_range > 5000:
+            step = 1000
+        elif f_range > 2000:
+            step = 500
+        elif f_range > 500:
+            step = 100
         else:
-            label = f"{freq:.0f}"
-        ty = y - 18
-        # Shadow outline for readability against any background
-        for dx in (-2, -1, 0, 1, 2):
-            for dy in (-2, -1, 0, 1, 2):
-                draw.text((16 + dx, ty + dy), label, fill=(0, 0, 0), font=font)
-        draw.text((16, ty), label, fill=(230, 230, 230), font=font)
+            step = 50
+
+        f_val = step
+        while f_val < f_hi:
+            if f_val > f_lo:
+                frac = (f_val - f_lo) / (f_hi - f_lo + 1e-10)
+                y = int((1.0 - frac) * height)
+                y = max(0, min(height - 1, y))
+                blend = 0.12
+                row = img_arr[y].astype(np.float32)
+                grid_color = np.array([180, 220, 180], dtype=np.float32)
+                img_arr[y] = (row * (1 - blend) + grid_color * blend).astype(np.uint8)
+            f_val += step
+
+        img = Image.fromarray(img_arr)
 
     img.save(output_png, optimize=True)
 
