@@ -82,7 +82,7 @@ def render_info_panel(output_png, width, font_size,
     if location:
         entries.append(("LOC   ", location.upper()))
     if playback_speed and not playback_speed.upper().startswith("1X"):
-        entries.append(("SPEED ", playback_speed.upper()))
+        entries.append(("SPEED  ", playback_speed.upper()))
 
     if not entries:
         entries.append(("", ""))
@@ -140,8 +140,7 @@ def render_info_panel(output_png, width, font_size,
         if coords:
             map_size = max(total_h - 12, font_size * 5)
             map_img = render_map_widget(coords[0], coords[1],
-                                        widget_size=map_size,
-                                        font_size=max(10, font_size // 3))
+                                        widget_size=map_size)
             if map_img is not None:
                 map_x = width - map_size - 6
                 map_y = 6
