@@ -8,102 +8,102 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 def parse_datetime_from_filename(filename):
-    """Extract date/time from common field recorder filename patterns.
-
-    Supported patterns:
-    - 2026-03-08T07_47_03 (ISO with underscored time)
-    - YYYYMMDD_HHMMSS / YYYYMMDD-HHMMSS
-    - YYMMDD_HHMMSS / YYMMDD-HHMMSS
-    - Prefixed variants: ZOOM0001_YYYYMMDD_HHMMSS, SM4_YYYYMMDD_HHMMSS, etc.
-    """
+    """Extract date/time from common field recorder filename patterns."""
     basename = os.path.splitext(os.path.basename(filename))[0]
 
-    # Try ISO with separators: 2026-03-08T07_47_03
+    # ISO with separators: 2026-03-08T07_47_03
     m = re.search(r'(\d{4})-(\d{2})-(\d{2})[T_ \-](\d{2})[_\-:](\d{2})[_\-:](\d{2})', basename)
     if m:
         y, mo, d, h, mi, s = m.groups()
-        y_int = int(y)
-        if 1990 <= y_int <= 2099:
+        if 1990 <= int(y) <= 2099:
             return f"{y}-{mo}-{d}T{h}:{mi}:{s}"
 
-    # Try compact YYYYMMDD_HHMMSS (8+6 digits)
+    # Compact: YYYYMMDD_HHMMSS
     m = re.search(r'(\d{4})(\d{2})(\d{2})[_\-T](\d{2})(\d{2})(\d{2})', basename)
     if m:
         y, mo, d, h, mi, s = m.groups()
-        y_int = int(y)
-        if 1990 <= y_int <= 2099:
+        if 1990 <= int(y) <= 2099:
             return f"{y}-{mo}-{d}T{h}:{mi}:{s}"
 
-    # Try YYMMDD_HHMMSS (6+6 digits, but not matching 8-digit year blocks)
+    # Short year: YYMMDD_HHMMSS
     m = re.search(r'(?<!\d)(\d{2})(\d{2})(\d{2})[_\-](\d{2})(\d{2})(\d{2})(?!\d)', basename)
     if m:
         y, mo, d, h, mi, s = m.groups()
-        y_int = int(y)
-        century = "20" if y_int < 80 else "19"
+        century = "20" if int(y) < 80 else "19"
         return f"{century}{y}-{mo}-{d}T{h}:{mi}:{s}"
 
     return None
 
 
-def render_info_panel(output_png, width, height, font_size, line_spacing,
+def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
                       location="", playback_speed=""):
-    """Render the info panel with industrial monospace aesthetic."""
+    """Render the info panel with industrial monospace aesthetic.
 
-    img = Image.new('RGB', (width, height), color=(10, 10, 10))
-    draw = ImageDraw.Draw(img)
+    Auto-sizes height to fit content tightly. Returns actual height.
+    """
 
     try:
         font = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", font_size)
-        font_bold = ImageFont.truetype(
             "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", font_size)
     except Exception:
-        font = ImageFont.load_default()
-        font_bold = font
+        try:
+            # macOS fallback
+            font = ImageFont.truetype("/System/Library/Fonts/Menlo.ttc", font_size)
+        except Exception:
+            font = ImageFont.load_default()
 
     text_color = (220, 220, 220)
-    label_color = (130, 130, 130)
-    margin_left = 32
-    margin_top = 24
+    label_color = (140, 140, 140)
+    padding_x = 28
+    padding_y = 20
+    line_gap = 6  # tight spacing between lines
 
     lines = []
     if filename:
-        lines.append(("FILE", os.path.basename(filename)))
+        lines.append(("FILE: ", os.path.basename(filename)))
     if subject:
-        lines.append(("SUBJECT", subject))
+        lines.append(("SUBJECT: ", subject))
     if recorder:
-        lines.append(("RECORDER", recorder))
+        lines.append(("RECORDER: ", recorder))
     if datetime_str:
-        lines.append(("DATE", datetime_str))
+        lines.append(("DATE: ", datetime_str))
     if location:
-        lines.append(("LOCATION", location))
+        lines.append(("LOCATION: ", location))
     if playback_speed and playback_speed != "1x":
-        lines.append(("PLAYBACK", playback_speed))
+        lines.append(("PLAYBACK: ", playback_speed))
 
-    y = margin_top
+    if not lines:
+        lines.append(("", ""))
+
+    # Measure line height from the font
+    line_height = font.getbbox("Ay")[3] - font.getbbox("Ay")[1]
+    total_text_height = len(lines) * line_height + (len(lines) - 1) * line_gap
+    panel_height = total_text_height + 2 * padding_y + 2  # +2 for separator line
+
+    img = Image.new('RGB', (width, panel_height), color=(10, 10, 10))
+    draw = ImageDraw.Draw(img)
+
+    y = padding_y
     for label, value in lines:
-        # Draw label in dim color
-        label_text = f"{label}: "
-        draw.text((margin_left, y), label_text, fill=label_color, font=font_bold)
-        # Draw value in brighter color
-        label_width = draw.textlength(label_text, font=font_bold)
-        draw.text((margin_left + label_width, y), value, fill=text_color, font=font)
-        y += line_spacing
+        draw.text((padding_x, y), label, fill=label_color, font=font)
+        label_w = draw.textlength(label, font=font)
+        draw.text((padding_x + label_w, y), value, fill=text_color, font=font)
+        y += line_height + line_gap
 
-    # Thin separator line at bottom
-    draw.line([(0, height - 1), (width, height - 1)], fill=(60, 60, 60), width=1)
+    # Separator line at bottom
+    draw.line([(0, panel_height - 1), (width, panel_height - 1)],
+              fill=(50, 50, 50), width=1)
 
     img.save(output_png)
+    return panel_height
 
 
 def main():
     parser = argparse.ArgumentParser(description='Render info panel PNG')
     parser.add_argument('--output', required=True, help='Output PNG')
     parser.add_argument('--width', type=int, required=True)
-    parser.add_argument('--height', type=int, required=True)
     parser.add_argument('--font-size', type=int, default=22)
-    parser.add_argument('--line-spacing', type=int, default=28)
     parser.add_argument('--filename', default='')
     parser.add_argument('--subject', default='')
     parser.add_argument('--recorder', default='')
@@ -122,12 +122,10 @@ def main():
         else:
             datetime_str = "Unknown"
 
-    render_info_panel(
+    panel_height = render_info_panel(
         output_png=args.output,
         width=args.width,
-        height=args.height,
         font_size=args.font_size,
-        line_spacing=args.line_spacing,
         filename=args.filename,
         subject=args.subject,
         recorder=args.recorder,
@@ -135,6 +133,9 @@ def main():
         location=args.location,
         playback_speed=args.playback_speed,
     )
+
+    # Output actual height for the shell script to use
+    print(f"panel_height={panel_height}")
 
 
 if __name__ == '__main__':

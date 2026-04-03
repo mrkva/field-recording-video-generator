@@ -185,6 +185,12 @@ interactive_dialogue() {
     META_LOCATION=$(ask "Location (optional, Enter to skip)" "")
 
     msg ""
+    local nyquist=$((AUDIO_SAMPLE_RATE / 2))
+    msg "${DIM}Spectrogram frequency range (Hz). Nyquist: ${nyquist} Hz${RESET}"
+    FREQ_MIN=$(ask "Freq min (Hz)" "20")
+    FREQ_MAX=$(ask "Freq max (Hz)" "$nyquist")
+
+    msg ""
     msg "${DIM}Playback speed: reinterpret sample rate for ultrasonic content.${RESET}"
     msg "${DIM}Format: SOURCE:TARGET (e.g. 192000:44100) or divisor (e.g. 4.35)${RESET}"
     msg "${DIM}Press Enter for normal speed (1x).${RESET}"
@@ -428,13 +434,6 @@ main() {
     # Load preset
     source "${PRESETS_DIR}/${PRESET}.conf"
 
-    # Adjust spectrogram height: use full space when no photo
-    if [[ -z "$PHOTO_PATH" ]]; then
-        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT))
-    else
-        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT - PHOTO_BAND_HEIGHT))
-    fi
-
     # Calculate effective duration
     local effective_duration
     effective_duration=$("$PYTHON" -c "print(f'{${AUDIO_DURATION} * ${SPEED_FACTOR}:.6f}')")
@@ -453,8 +452,35 @@ main() {
     local prepared_audio="${TMPDIR}/prepared_audio.wav"
     prepare_audio "$input_file" "$prepared_audio" "$EFFECTIVE_RATE" "$SPEED_FACTOR"
 
-    # Stage 2: Generate spectrogram
-    echo -e "  ${CYAN}[2/4]${RESET} Generating spectrogram..."
+    # Stage 2: Render info panel (first, to get auto-sized height)
+    echo -e "  ${CYAN}[2/4]${RESET} Rendering info panel..."
+    local info_png="${TMPDIR}/info_panel.png"
+    local panel_output
+    panel_output=$("$PYTHON" "${LIB_DIR}/render_info_panel.py" \
+        --output "$info_png" \
+        --width "$VIDEO_WIDTH" \
+        --font-size "$INFO_FONT_SIZE" \
+        --filename "$input_file" \
+        --subject "$META_SUBJECT" \
+        --recorder "$META_RECORDER" \
+        --datetime "$META_DATETIME" \
+        --location "$META_LOCATION" \
+        --playback-speed "$PLAYBACK_LABEL")
+
+    # Extract auto-calculated panel height
+    local INFO_PANEL_HEIGHT
+    INFO_PANEL_HEIGHT=$(echo "$panel_output" | grep "panel_height=" | cut -d= -f2)
+
+    # Calculate spectrogram height from remaining space
+    local SPEC_HEIGHT
+    if [[ -n "$PHOTO_PATH" ]]; then
+        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT - PHOTO_BAND_HEIGHT))
+    else
+        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT))
+    fi
+
+    # Stage 3: Generate spectrogram
+    echo -e "  ${CYAN}[3/4]${RESET} Generating spectrogram..."
     local spec_png="${TMPDIR}/spectrogram.png"
     local spec_total_w
     spec_total_w=$(calc_spec_dimensions "$effective_duration" "$VIDEO_WIDTH")
@@ -465,25 +491,10 @@ main() {
         --width "$spec_total_w" \
         --height "$SPEC_HEIGHT" \
         --colormap inferno \
-        --freq-min 20 \
+        --freq-min "$FREQ_MIN" \
+        --freq-max "$FREQ_MAX" \
         --original-sr "$AUDIO_SAMPLE_RATE" \
         --dynamic-range 90
-
-    # Stage 3: Render info panel
-    echo -e "  ${CYAN}[3/4]${RESET} Rendering info panel..."
-    local info_png="${TMPDIR}/info_panel.png"
-    "$PYTHON" "${LIB_DIR}/render_info_panel.py" \
-        --output "$info_png" \
-        --width "$VIDEO_WIDTH" \
-        --height "$INFO_PANEL_HEIGHT" \
-        --font-size "$INFO_FONT_SIZE" \
-        --line-spacing "$INFO_LINE_SPACING" \
-        --filename "$input_file" \
-        --subject "$META_SUBJECT" \
-        --recorder "$META_RECORDER" \
-        --datetime "$META_DATETIME" \
-        --location "$META_LOCATION" \
-        --playback-speed "$PLAYBACK_LABEL"
 
     # Stage 4: Compose video
     echo -e "  ${CYAN}[4/4]${RESET} Compositing video with ffmpeg..."
