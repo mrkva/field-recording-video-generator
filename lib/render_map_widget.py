@@ -71,13 +71,22 @@ def apply_retro_filter(img, widget_size):
     arr = np.array(cropped).astype(float)
     gray = (0.299 * arr[:, :, 0] + 0.587 * arr[:, :, 1] + 0.114 * arr[:, :, 2])
 
-    # High contrast + darken to match dark video aesthetic
+    # Normalize to full range
     g_min, g_max = gray.min(), gray.max()
     if g_max > g_min:
-        gray = ((gray - g_min) / (g_max - g_min))
-        # Apply gamma curve to darken midtones
-        gray = np.power(gray, 1.8) * 180  # max brightness ~180 instead of 255
-    gray = gray.clip(0, 255).astype(np.uint8)
+        gray = (gray - g_min) / (g_max - g_min)
+    else:
+        gray = gray * 0
+
+    # Invert: dark background with bright features (roads, buildings pop)
+    gray = 1.0 - gray
+
+    # Aggressive S-curve contrast to separate features from background
+    # Sigmoid-like: pushes darks darker, lights lighter
+    gray = 1.0 / (1.0 + np.exp(-10 * (gray - 0.5)))
+
+    # Scale to dark range: max brightness ~140 for dark theme
+    gray = (gray * 140).clip(0, 255).astype(np.uint8)
 
     result = np.stack([gray, gray, gray], axis=-1)
     return Image.fromarray(result)
