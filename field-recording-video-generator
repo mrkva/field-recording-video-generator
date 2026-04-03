@@ -11,6 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${SCRIPT_DIR}/lib"
 PRESETS_DIR="${SCRIPT_DIR}/presets"
+VENV_DIR="${SCRIPT_DIR}/.venv"
+PYTHON="${VENV_DIR}/bin/python3"
 
 # Colors for terminal output
 BOLD='\033[1m'
@@ -32,16 +34,23 @@ check_dependencies() {
     command -v python3 >/dev/null 2>&1 || missing+=(python3)
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-        echo -e "${RED}ERROR: Missing dependencies: ${missing[*]}${RESET}" >&2
-        echo "Install with: apt install ffmpeg sox python3" >&2
+        echo -e "${RED}ERROR: Missing system dependencies: ${missing[*]}${RESET}" >&2
+        echo "" >&2
+        echo "  macOS:         brew install ffmpeg sox python3" >&2
+        echo "  Ubuntu/Debian: sudo apt install ffmpeg sox python3 python3-venv" >&2
+        echo "  Arch:          sudo pacman -S ffmpeg sox python" >&2
         exit 1
     fi
 
-    python3 -c "import numpy, scipy, matplotlib, PIL" 2>/dev/null || {
-        echo -e "${RED}ERROR: Missing Python packages.${RESET}" >&2
-        echo "Install with: pip install numpy scipy matplotlib Pillow" >&2
-        exit 1
-    }
+    # Auto-setup bundled venv if needed
+    if [[ ! -x "$PYTHON" ]]; then
+        echo -e "${CYAN}First run — setting up Python environment...${RESET}" >&2
+        python3 -m venv "$VENV_DIR"
+        "$VENV_DIR/bin/pip" install --quiet --upgrade pip
+        "$VENV_DIR/bin/pip" install --quiet -r "${SCRIPT_DIR}/requirements.txt"
+        echo -e "${GREEN}Done.${RESET}" >&2
+        echo "" >&2
+    fi
 }
 
 # ============================================================================
@@ -66,7 +75,7 @@ EOF
 # Parse datetime from filename
 # ============================================================================
 parse_datetime() {
-    python3 -c "
+    "$PYTHON" -c "
 import re, os, sys
 basename = os.path.splitext(os.path.basename(sys.argv[1]))[0]
 m = re.search(r'(\d{4})(\d{2})(\d{2})[_\-T](\d{2})(\d{2})(\d{2})', basename)
@@ -210,13 +219,13 @@ parse_playback_speed() {
     if [[ "$input" == *":"* ]]; then
         local source_rate="${input%%:*}"
         local target_rate="${input##*:}"
-        SPEED_FACTOR=$(python3 -c "print(f'{${source_rate}/${target_rate}:.6f}')")
+        SPEED_FACTOR=$("$PYTHON" -c "print(f'{${source_rate}/${target_rate}:.6f}')")
         EFFECTIVE_RATE="$target_rate"
         PLAYBACK_LABEL="${source_rate}Hz → ${target_rate}Hz (${SPEED_FACTOR}× slower)"
     else
         # Divisor format
         SPEED_FACTOR="$input"
-        EFFECTIVE_RATE=$(python3 -c "print(int(${orig_sr} / ${input}))")
+        EFFECTIVE_RATE=$("$PYTHON" -c "print(int(${orig_sr} / ${input}))")
         PLAYBACK_LABEL="${input}× slower"
     fi
 }
@@ -253,7 +262,7 @@ calc_spec_dimensions() {
     # pixels per second: aim for good detail
     local pps=200
     local total_w
-    total_w=$(python3 -c "
+    total_w=$("$PYTHON" -c "
 import math
 d = ${duration}
 pps = ${pps}
@@ -286,11 +295,11 @@ build_ffmpeg_command() {
 
     # Scroll rate: pixels per second
     local scroll_rate
-    scroll_rate=$(python3 -c "print(f'{${spec_total_w} / ${duration}:.6f}')")
+    scroll_rate=$("$PYTHON" -c "print(f'{${spec_total_w} / ${duration}:.6f}')")
 
     # Half viewport
     local half_vw
-    half_vw=$(python3 -c "print(${viewport_w} / 2.0)")
+    half_vw=$("$PYTHON" -c "print(${viewport_w} / 2.0)")
 
     # Crop expression: x = clip(scroll_rate*t - viewport/2, 0, total_w - viewport_w)
     local crop_x="min(max(0,${scroll_rate}*t-${half_vw}),${spec_total_w}-${viewport_w})"
@@ -385,7 +394,7 @@ main() {
 
     # Calculate effective duration
     local effective_duration
-    effective_duration=$(python3 -c "print(f'{${AUDIO_DURATION} * ${SPEED_FACTOR}:.6f}')")
+    effective_duration=$("$PYTHON" -c "print(f'{${AUDIO_DURATION} * ${SPEED_FACTOR}:.6f}')")
 
     echo -e "${DIM}──────────────────────────────────────────────────────${RESET}"
     echo -e "${BOLD}Generating video...${RESET}"
@@ -407,7 +416,7 @@ main() {
     local spec_total_w
     spec_total_w=$(calc_spec_dimensions "$effective_duration" "$VIDEO_WIDTH")
 
-    python3 "${LIB_DIR}/generate_spectrogram.py" \
+    "$PYTHON" "${LIB_DIR}/generate_spectrogram.py" \
         --input "$input_file" \
         --output "$spec_png" \
         --width "$spec_total_w" \
@@ -420,7 +429,7 @@ main() {
     # Stage 3: Render info panel
     echo -e "  ${CYAN}[3/4]${RESET} Rendering info panel..."
     local info_png="${TMPDIR}/info_panel.png"
-    python3 "${LIB_DIR}/render_info_panel.py" \
+    "$PYTHON" "${LIB_DIR}/render_info_panel.py" \
         --output "$info_png" \
         --width "$VIDEO_WIDTH" \
         --height "$INFO_PANEL_HEIGHT" \

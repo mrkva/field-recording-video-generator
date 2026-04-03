@@ -2,17 +2,44 @@
 
 Generate videos from WAV field recordings with scrolling logarithmic spectrogram, playback cursor, metadata overlay, and optional photo.
 
-## Dependencies
+## Install
 
+### 1. System dependencies
+
+**macOS:**
+```bash
+brew install ffmpeg sox python3
 ```
-apt install ffmpeg sox python3
-pip install numpy scipy matplotlib Pillow
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install ffmpeg sox python3 python3-venv
+```
+
+**Arch:**
+```bash
+sudo pacman -S ffmpeg sox python
+```
+
+### 2. Clone and run
+
+```bash
+git clone https://github.com/mrkva/field-recording-video-generator.git
+cd field-recording-video-generator
+./field-recording-video-generator recording.wav
+```
+
+Python packages (numpy, scipy, matplotlib, Pillow) are installed automatically into a local `.venv/` on first run. No system-wide pip installs needed.
+
+To add to your PATH:
+```bash
+sudo ln -sf "$(pwd)/field-recording-video-generator" /usr/local/bin/field-recording-video-generator
 ```
 
 ## Usage
 
 ```bash
-./field-recording-video-generator recording.wav
+field-recording-video-generator recording.wav
 ```
 
 The program will interactively ask for:
@@ -44,5 +71,5 @@ Formats:
 ## Output
 
 - Video: H.264, CRF 18, slow preset
-- Audio: AAC 320kbps
+- Audio: AAC 256kbps
 - Container: MP4 with faststart flag
