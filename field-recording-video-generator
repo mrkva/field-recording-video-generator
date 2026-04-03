@@ -126,7 +126,34 @@ probe_audio() {
     AUDIO_DURATION=$(ffprobe -v error -select_streams a:0 \
         -show_entries format=duration -of csv=p=0 "$input")
     AUDIO_BIT_DEPTH=$(ffprobe -v error -select_streams a:0 \
-        -show_entries stream=bits_per_raw_sample -of csv=p=0 "$input" 2>/dev/null || echo "16")
+        -show_entries stream=bits_per_raw_sample -of csv=p=0 "$input" 2>/dev/null || echo "")
+    # Fallback: try bits_per_sample if bits_per_raw_sample is empty/N/A
+    if [[ -z "$AUDIO_BIT_DEPTH" || "$AUDIO_BIT_DEPTH" == "N/A" ]]; then
+        AUDIO_BIT_DEPTH=$(ffprobe -v error -select_streams a:0 \
+            -show_entries stream=bits_per_sample -of csv=p=0 "$input" 2>/dev/null || echo "")
+    fi
+    # Detect float format from codec name
+    local codec_name
+    codec_name=$(ffprobe -v error -select_streams a:0 \
+        -show_entries stream=codec_name -of csv=p=0 "$input" 2>/dev/null || echo "")
+    codec_name="${codec_name%%[[:space:]]}"
+    AUDIO_FORMAT=""
+    case "$codec_name" in
+        pcm_f32le|pcm_f32be|pcm_f64le|pcm_f64be)
+            AUDIO_FORMAT="FLOAT"
+            ;;
+    esac
+    if [[ -z "$AUDIO_BIT_DEPTH" || "$AUDIO_BIT_DEPTH" == "N/A" || "$AUDIO_BIT_DEPTH" == "0" ]]; then
+        # Derive from codec name
+        case "$codec_name" in
+            pcm_f32*|pcm_s32*) AUDIO_BIT_DEPTH="32" ;;
+            pcm_f64*)          AUDIO_BIT_DEPTH="64" ;;
+            pcm_s24*)          AUDIO_BIT_DEPTH="24" ;;
+            pcm_s16*|pcm_u16*) AUDIO_BIT_DEPTH="16" ;;
+            pcm_s8*|pcm_u8*)   AUDIO_BIT_DEPTH="8" ;;
+            *)                 AUDIO_BIT_DEPTH="16" ;;
+        esac
+    fi
 
     # Clean up
     AUDIO_SAMPLE_RATE="${AUDIO_SAMPLE_RATE%%[[:space:]]}"
@@ -539,7 +566,7 @@ main() {
         --datetime "$META_DATETIME" \
         --location "$META_LOCATION" \
         --playback-speed "$PLAYBACK_LABEL" \
-        --sample-info "${AUDIO_SAMPLE_RATE}HZ ${AUDIO_BIT_DEPTH}BIT" \
+        --sample-info "${AUDIO_SAMPLE_RATE}HZ ${AUDIO_BIT_DEPTH}BIT${AUDIO_FORMAT:+ $AUDIO_FORMAT}" \
         --coordinates "$META_COORDINATES")
 
     # Extract auto-calculated panel height

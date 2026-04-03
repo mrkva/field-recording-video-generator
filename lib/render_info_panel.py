@@ -97,9 +97,21 @@ def render_info_panel(output_png, width, font_size,
     label_col_px = font.getlength(label_col_text)
     value_x = padding_x + label_col_px
 
-    max_value_w = width - value_x - padding_x
+    # Determine if map widget will be shown, to reserve space for it
+    map_reserve_w = 0
+    if coordinates:
+        from render_map_widget import parse_coordinates
+        coords = parse_coordinates(coordinates)
+        if coords:
+            # Estimate map size (will be computed properly later)
+            est_lines = len(entries) + 1
+            est_h = 2 * padding_y + est_lines * line_height + (len(entries) - 1) * line_gap + 2
+            map_size = max(est_h - 12, font_size * 5)
+            map_reserve_w = map_size + 16  # map width + margins
 
-    # Wrap long values
+    max_value_w = width - value_x - padding_x - map_reserve_w
+
+    # Wrap long values (respecting map widget space)
     all_lines = []  # list of (label_or_none, value_text)
     for label, value in entries:
         current = ""
