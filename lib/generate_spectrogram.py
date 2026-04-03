@@ -51,7 +51,7 @@ def compute_spectrogram_chunk(audio, sr, nperseg, hop):
 
 def generate_spectrogram(input_wav, output_png, width, height,
                          colormap_name='inferno', freq_min=20, freq_max=None,
-                         dynamic_range=90, original_sr=None):
+                         dynamic_range=90, original_sr=None, grid=False):
     """Generate a wide spectrogram PNG from a WAV file."""
 
     sr, audio = load_audio_mono(input_wav)
@@ -134,6 +134,9 @@ def generate_spectrogram(input_wav, output_png, width, height,
     img = Image.fromarray(colored)
     img = img.resize((width, height), Image.LANCZOS)
 
+    # Convert to numpy for grid drawing (much faster for wide images)
+    img_arr = np.array(img)
+
     # Draw frequency axis ticks on the left edge
     draw = ImageDraw.Draw(img)
 
@@ -170,19 +173,34 @@ def generate_spectrogram(input_wav, output_png, width, height,
             tick_freqs.append(f_val)
         f_val += step
 
+    # Compute tick Y positions
+    tick_positions = []
     for freq in tick_freqs:
-        # Linear position (flipped)
         frac = (freq - f_display_min) / (f_display_max - f_display_min + 1e-10)
         y = int((1.0 - frac) * height)
         y = max(0, min(height - 1, y))
+        tick_positions.append((freq, y))
 
+    # Draw grid lines via numpy (fast for wide images)
+    if grid:
+        for freq, y in tick_positions:
+            blend = 0.12
+            row = img_arr[y].astype(np.float32)
+            grid_color = np.array([180, 220, 180], dtype=np.float32)
+            img_arr[y] = (row * (1 - blend) + grid_color * blend).astype(np.uint8)
+        # Rebuild PIL image from modified array
+        img = Image.fromarray(img_arr)
+        draw = ImageDraw.Draw(img)
+
+    # Draw tick marks + labels on left edge
+    for freq, y in tick_positions:
         draw.line([(0, y), (6, y)], fill=(200, 200, 200), width=1)
 
         if freq >= 1000:
-            label = f"{freq/1000:.0f}k"
+            label = f"{freq/1000:.0f}K"
         else:
             label = f"{freq:.0f}"
-        draw.text((8, y - 8), label, fill=(180, 180, 180), font=font)
+        draw.text((8, y - 8), label, fill=(200, 200, 200), font=font)
 
     img.save(output_png, optimize=True)
 
@@ -206,6 +224,7 @@ def main():
     parser.add_argument('--freq-max', type=float, default=0, help='Max frequency Hz (0=Nyquist)')
     parser.add_argument('--dynamic-range', type=float, default=90, help='Dynamic range in dB')
     parser.add_argument('--original-sr', type=int, default=0, help='Original sample rate for labeling')
+    parser.add_argument('--grid', action='store_true', help='Draw frequency grid lines')
     args = parser.parse_args()
 
     info = generate_spectrogram(
@@ -218,6 +237,7 @@ def main():
         freq_max=args.freq_max if args.freq_max > 0 else None,
         dynamic_range=args.dynamic_range,
         original_sr=args.original_sr if args.original_sr > 0 else None,
+        grid=args.grid,
     )
 
     for k, v in info.items():

@@ -209,6 +209,8 @@ interactive_dialogue() {
         PHOTO_PATH=""
     fi
 
+    FREQ_GRID=$(ask "Show frequency grid on spectrogram? (y/n)" "y")
+
     # Output filename
     local default_output="${input_file%.*}_video.mp4"
     OUTPUT_FILE=$(ask "Output filename" "$default_output")
@@ -459,7 +461,7 @@ main() {
     panel_output=$("$PYTHON" "${LIB_DIR}/render_info_panel.py" \
         --output "$info_png" \
         --width "$VIDEO_WIDTH" \
-        --font-size "$INFO_FONT_SIZE" \
+        --pixel-scale "$PIXEL_SCALE" \
         --filename "$input_file" \
         --subject "$META_SUBJECT" \
         --recorder "$META_RECORDER" \
@@ -485,6 +487,11 @@ main() {
     local spec_total_w
     spec_total_w=$(calc_spec_dimensions "$effective_duration" "$VIDEO_WIDTH")
 
+    local grid_flag=""
+    if [[ "$FREQ_GRID" == "y" || "$FREQ_GRID" == "Y" || "$FREQ_GRID" == "yes" ]]; then
+        grid_flag="--grid"
+    fi
+
     "$PYTHON" "${LIB_DIR}/generate_spectrogram.py" \
         --input "$input_file" \
         --output "$spec_png" \
@@ -494,6 +501,7 @@ main() {
         --freq-min "$FREQ_MIN" \
         --freq-max "$FREQ_MAX" \
         --original-sr "$AUDIO_SAMPLE_RATE" \
+        $grid_flag \
         --dynamic-range 90
 
     # Stage 4: Compose video
