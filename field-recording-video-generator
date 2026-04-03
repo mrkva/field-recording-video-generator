@@ -461,7 +461,7 @@ main() {
     panel_output=$("$PYTHON" "${LIB_DIR}/render_info_panel.py" \
         --output "$info_png" \
         --width "$VIDEO_WIDTH" \
-        --pixel-scale "$PIXEL_SCALE" \
+        --font-size "$INFO_FONT_SIZE" \
         --filename "$input_file" \
         --subject "$META_SUBJECT" \
         --recorder "$META_RECORDER" \

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the metadata info panel as a PNG image with pixelated font."""
+"""Render the metadata info panel as a PNG — NASA telemetry aesthetic."""
 
 import argparse
 import re
@@ -32,124 +32,119 @@ def parse_datetime_from_filename(filename):
     return None
 
 
-def render_info_panel(output_png, width, pixel_scale,
+def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
                       location="", playback_speed=""):
-    """Render info panel with pixelated monospace aesthetic.
+    """Render info panel — NASA/telemetry camera overlay aesthetic.
 
-    Renders at low resolution then scales up with nearest-neighbor
-    for a chunky pixel look. All text is uppercase.
+    All caps, monospace, tight layout with technical formatting.
     """
 
-    try:
-        font = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 12)
-    except Exception:
+    font_paths = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
+        "/System/Library/Fonts/Menlo.ttc",
+    ]
+    font = None
+    for fp in font_paths:
         try:
-            font = ImageFont.truetype("/System/Library/Fonts/Menlo.ttc", 12)
+            font = ImageFont.truetype(fp, font_size)
+            break
         except Exception:
-            font = ImageFont.load_default()
+            continue
+    if font is None:
+        font = ImageFont.load_default()
 
-    text_color = (220, 220, 220)
-    label_color = (140, 140, 140)
-    padding_x = 10
-    padding_y = 8
-    line_height = 16
-    line_gap = 2
+    # NASA telemetry colors
+    value_color = (230, 230, 230)
+    label_color = (120, 120, 120)
+    separator_color = (50, 50, 50)
+    bg_color = (8, 8, 8)
 
-    # Low-res canvas width
-    lo_w = width // pixel_scale
+    padding_x = 30
+    padding_y = 22
+    line_gap = 8
 
-    # Build lines with wrapping — all text uppercase
+    max_text_w = width - 2 * padding_x
+    line_height = font.getbbox("AY")[3] - font.getbbox("AY")[1] + 2
+
+    # Build entries — all uppercase
     entries = []
     if filename:
-        entries.append(("FILE: ", os.path.basename(filename).upper()))
+        entries.append(("FILE  ", os.path.basename(filename).upper()))
     if subject:
-        entries.append(("SUBJECT: ", subject.upper()))
+        entries.append(("SUBJ  ", subject.upper()))
     if recorder:
-        entries.append(("RECORDER: ", recorder.upper()))
+        entries.append(("REC   ", recorder.upper()))
     if datetime_str:
-        entries.append(("DATE: ", datetime_str.upper()))
+        entries.append(("DATE  ", datetime_str.upper()))
     if location:
-        entries.append(("LOCATION: ", location.upper()))
-    if playback_speed and playback_speed != "1x":
-        entries.append(("PLAYBACK: ", playback_speed.upper()))
+        entries.append(("LOC   ", location.upper()))
+    if playback_speed and not playback_speed.upper().startswith("1X"):
+        entries.append(("SPEED ", playback_speed.upper()))
 
     if not entries:
         entries.append(("", ""))
 
-    max_text_w = lo_w - 2 * padding_x
-
-    # Pre-compute wrapped lines
-    wrapped_lines = []
+    # Wrap long lines
+    all_lines = []  # list of (label_or_none, text)
     for label, value in entries:
-        full_text = label + value
-        # Character-level wrapping
-        current_line = ""
-        for ch in full_text:
-            test = current_line + ch
-            if font.getlength(test) > max_text_w and current_line:
-                wrapped_lines.append(current_line)
-                current_line = ch
+        full = label + value
+        current = ""
+        is_first = True
+        for ch in full:
+            test = current + ch
+            if font.getlength(test) > max_text_w and current:
+                all_lines.append((is_first, current))
+                current = ch
+                is_first = False
             else:
-                current_line = test
-        if current_line:
-            wrapped_lines.append(current_line)
-        # Add a blank gap between entries
-        wrapped_lines.append(None)
+                current = test
+        if current:
+            all_lines.append((is_first, current))
 
-    # Remove trailing None
-    while wrapped_lines and wrapped_lines[-1] is None:
-        wrapped_lines.pop()
-
-    # Calculate low-res height
-    visible_lines = sum(1 for l in wrapped_lines if l is not None)
-    gap_lines = sum(1 for l in wrapped_lines if l is None)
-    lo_h = (2 * padding_y + visible_lines * line_height +
-            gap_lines * (line_gap + 2) + 2)
-
-    # Render at low res
-    img = Image.new('RGB', (lo_w, lo_h), color=(10, 10, 10))
+    total_h = 2 * padding_y + len(all_lines) * line_height + (len(entries) - 1) * line_gap + 2
+    img = Image.new('RGB', (width, total_h), color=bg_color)
     draw = ImageDraw.Draw(img)
 
     y = padding_y
-    for line in wrapped_lines:
-        if line is None:
-            y += line_gap + 2
-            continue
-        # Color the label portion dim, value bright
-        # Detect label by looking for ": " prefix
-        drawn = False
-        for sep_idx in range(len(line)):
-            if line[sep_idx:sep_idx+2] == ": ":
-                label_part = line[:sep_idx+2]
-                value_part = line[sep_idx+2:]
+    entry_idx = 0
+    line_in_entry = 0
+    for i, (is_first, text) in enumerate(all_lines):
+        if is_first and i > 0:
+            y += line_gap  # gap between entries
+
+        # Split label from value on first line of each entry
+        if is_first:
+            # Find the double-space separator between label and value
+            sep_pos = text.find("  ")
+            if sep_pos >= 0:
+                label_part = text[:sep_pos + 2]
+                value_part = text[sep_pos + 2:]
                 draw.text((padding_x, y), label_part, fill=label_color, font=font)
                 lw = font.getlength(label_part)
-                draw.text((padding_x + lw, y), value_part, fill=text_color, font=font)
-                drawn = True
-                break
-        if not drawn:
-            # Continuation line — all bright
-            draw.text((padding_x, y), line, fill=text_color, font=font)
+                draw.text((padding_x + lw, y), value_part, fill=value_color, font=font)
+            else:
+                draw.text((padding_x, y), text, fill=value_color, font=font)
+        else:
+            # Continuation line — indent to match value position
+            draw.text((padding_x, y), text, fill=value_color, font=font)
+
         y += line_height
 
-    # Separator line at bottom
-    draw.line([(0, lo_h - 1), (lo_w, lo_h - 1)], fill=(50, 50, 50), width=1)
-
-    # Scale up with nearest-neighbor for pixel effect
-    final_h = lo_h * pixel_scale
-    img = img.resize((width, final_h), Image.NEAREST)
+    # Bottom separator — thin line
+    draw.line([(0, total_h - 1), (width, total_h - 1)],
+              fill=separator_color, width=1)
 
     img.save(output_png)
-    return final_h
+    return total_h
 
 
 def main():
     parser = argparse.ArgumentParser(description='Render info panel PNG')
     parser.add_argument('--output', required=True, help='Output PNG')
     parser.add_argument('--width', type=int, required=True)
-    parser.add_argument('--pixel-scale', type=int, default=3)
+    parser.add_argument('--font-size', type=int, default=30)
     parser.add_argument('--filename', default='')
     parser.add_argument('--subject', default='')
     parser.add_argument('--recorder', default='')
@@ -170,7 +165,7 @@ def main():
     panel_height = render_info_panel(
         output_png=args.output,
         width=args.width,
-        pixel_scale=args.pixel_scale,
+        font_size=args.font_size,
         filename=args.filename,
         subject=args.subject,
         recorder=args.recorder,

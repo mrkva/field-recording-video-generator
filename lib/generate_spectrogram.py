@@ -141,19 +141,20 @@ def generate_spectrogram(input_wav, output_png, width, height,
     draw = ImageDraw.Draw(img)
 
     try:
-        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 14)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf", 32)
     except Exception:
-        font = ImageFont.load_default()
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf", 32)
+        except Exception:
+            font = ImageFont.load_default()
 
-    # Linear frequency tick marks
-    freq_ratio = freq_max_display / freq_max if freq_max > 0 else 1.0
-    f_display_min = f_cropped[0] * freq_ratio
-    f_display_max = f_cropped[-1] * freq_ratio
+    # Frequency range for labels: use the actual user-requested range
+    f_lo = float(freq_min)
+    f_hi = float(freq_max)
 
-    # Generate nice tick values
+    # Generate nice tick values within the visible range
     tick_freqs = []
-    # Choose tick spacing based on range
-    f_range = f_display_max - f_display_min
+    f_range = f_hi - f_lo
     if f_range > 100000:
         step = 20000
     elif f_range > 40000:
@@ -164,19 +165,21 @@ def generate_spectrogram(input_wav, output_png, width, height,
         step = 2000
     elif f_range > 2000:
         step = 500
+    elif f_range > 500:
+        step = 200
     else:
-        step = 100
+        step = 50
 
     f_val = step
-    while f_val <= f_display_max:
-        if f_val >= f_display_min:
+    while f_val < f_hi:
+        if f_val > f_lo:
             tick_freqs.append(f_val)
         f_val += step
 
     # Compute tick Y positions
     tick_positions = []
     for freq in tick_freqs:
-        frac = (freq - f_display_min) / (f_display_max - f_display_min + 1e-10)
+        frac = (freq - f_lo) / (f_hi - f_lo + 1e-10)
         y = int((1.0 - frac) * height)
         y = max(0, min(height - 1, y))
         tick_positions.append((freq, y))
@@ -194,13 +197,18 @@ def generate_spectrogram(input_wav, output_png, width, height,
 
     # Draw tick marks + labels on left edge
     for freq, y in tick_positions:
-        draw.line([(0, y), (6, y)], fill=(200, 200, 200), width=1)
+        draw.line([(0, y), (12, y)], fill=(220, 220, 220), width=2)
 
         if freq >= 1000:
             label = f"{freq/1000:.0f}K"
         else:
             label = f"{freq:.0f}"
-        draw.text((8, y - 8), label, fill=(200, 200, 200), font=font)
+        ty = y - 18
+        # Shadow outline for readability against any background
+        for dx in (-2, -1, 0, 1, 2):
+            for dy in (-2, -1, 0, 1, 2):
+                draw.text((16 + dx, ty + dy), label, fill=(0, 0, 0), font=font)
+        draw.text((16, ty), label, fill=(230, 230, 230), font=font)
 
     img.save(output_png, optimize=True)
 
