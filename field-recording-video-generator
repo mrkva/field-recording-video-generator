@@ -194,6 +194,11 @@ interactive_dialogue() {
     META_SUBJECT=$(ask "Recorded subject" "")
     META_RECORDER=$(ask "Recorded with" "")
     META_LOCATION=$(ask "Location (optional, Enter to skip)" "")
+    if [[ -n "$META_LOCATION" ]]; then
+        META_COORDINATES=$(ask "Location coordinates for map (lat,lon, Enter to skip)" "")
+    else
+        META_COORDINATES=""
+    fi
 
     msg ""
     local nyquist=$((AUDIO_SAMPLE_RATE / 2))
@@ -533,7 +538,8 @@ main() {
         --recorder "$META_RECORDER" \
         --datetime "$META_DATETIME" \
         --location "$META_LOCATION" \
-        --playback-speed "$PLAYBACK_LABEL")
+        --playback-speed "$PLAYBACK_LABEL" \
+        --coordinates "$META_COORDINATES")
 
     # Extract auto-calculated panel height
     local INFO_PANEL_HEIGHT
@@ -579,7 +585,7 @@ main() {
         --height "$SPEC_HEIGHT" \
         --freq-min "$FREQ_MIN" \
         --freq-max "$FREQ_MAX" \
-        --font-size 42
+        --font-size "$INFO_FONT_SIZE"
 
     # Stage 5: Compose video
     echo -e "  ${CYAN}[5/5]${RESET} Compositing video with ffmpeg..."

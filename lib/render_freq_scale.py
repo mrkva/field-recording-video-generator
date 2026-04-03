@@ -123,34 +123,33 @@ def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=3
         if lw > max_label_w:
             max_label_w = lw
 
-    # Layout from right edge
-    right_margin = 10
+    # Layout from left edge
+    left_margin = 10
     major_tick_len = 24
     minor_tick_len = 12
     gap = 6
 
-    # Right edge of labels aligns to (width - right_margin)
-    label_right = width - right_margin
-    label_left = label_right - max_label_w
-    tick_end = label_left - gap
-    major_tick_start = tick_end - major_tick_len
-    minor_tick_start = tick_end - minor_tick_len
+    # Labels start at left_margin, ticks extend rightward after labels
+    label_left = left_margin
+    label_right = label_left + max_label_w
+    tick_start = label_right + gap
+    major_tick_end = tick_start + major_tick_len
+    minor_tick_end = tick_start + minor_tick_len
 
-    # Colors — white with black outline, like drone/camera OSD
+    # Colors — white with black outline
     text_color = (255, 255, 255, 240)
-    dim_text_color = (180, 180, 180, 200)
     tick_color = (255, 255, 255, 200)
     minor_tick_color = (180, 180, 180, 140)
     outline_color = (0, 0, 0, 220)
 
-    # Vertical reference line along tick ends
-    draw_outlined_line(draw, (tick_end, 0, tick_end, height),
+    # Vertical reference line along tick start
+    draw_outlined_line(draw, (tick_start, 0, tick_start, height),
                        fill=(255, 255, 255, 80), outline=(0, 0, 0, 60), width=1)
 
     # Minor ticks — thin, no label
     for freq in minors:
         y = freq_to_y(freq, f_lo, f_hi, height)
-        draw_outlined_line(draw, (minor_tick_start, y, tick_end, y),
+        draw_outlined_line(draw, (tick_start, y, minor_tick_end, y),
                            fill=minor_tick_color, outline=(0, 0, 0, 100), width=1)
 
     # Major ticks + labels
@@ -159,14 +158,14 @@ def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=3
         label = format_freq(freq)
 
         # Major tick
-        draw_outlined_line(draw, (major_tick_start, y, tick_end, y),
+        draw_outlined_line(draw, (tick_start, y, major_tick_end, y),
                            fill=tick_color, outline=outline_color, width=2)
 
-        # Label — right-aligned
+        # Label — right-aligned within label column
         bbox = font.getbbox(label)
         lw = bbox[2] - bbox[0]
         lh = bbox[3] - bbox[1]
-        lx = label_right - lw
+        lx = label_right - lw  # right-align within label area
         ly = y - lh // 2 - 2
         ly = max(2, min(height - lh - 2, ly))
 

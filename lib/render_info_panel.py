@@ -34,10 +34,11 @@ def parse_datetime_from_filename(filename):
 
 def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
-                      location="", playback_speed=""):
+                      location="", playback_speed="", coordinates=""):
     """Render info panel — NASA/telemetry camera overlay aesthetic.
 
     All caps, monospace, tight layout with technical formatting.
+    Optionally includes a retro map widget in the top-right corner.
     """
 
     font_paths = [
@@ -132,6 +133,28 @@ def render_info_panel(output_png, width, font_size,
 
         y += line_height
 
+    # Render map widget in top-right corner if coordinates provided
+    if coordinates:
+        from render_map_widget import render_map_widget, parse_coordinates
+        coords = parse_coordinates(coordinates)
+        if coords:
+            map_size = max(total_h - 12, font_size * 5)
+            map_img = render_map_widget(coords[0], coords[1],
+                                        widget_size=map_size,
+                                        font_size=max(10, font_size // 3))
+            if map_img is not None:
+                map_x = width - map_size - 6
+                map_y = 6
+                # Ensure panel is tall enough
+                if map_size + 12 > total_h:
+                    new_h = map_size + 12
+                    new_img = Image.new('RGB', (width, new_h), color=bg_color)
+                    new_img.paste(img, (0, 0))
+                    img = new_img
+                    draw = ImageDraw.Draw(img)
+                    total_h = new_h
+                img.paste(map_img, (map_x, map_y))
+
     # Bottom separator — thin line
     draw.line([(0, total_h - 1), (width, total_h - 1)],
               fill=separator_color, width=1)
@@ -151,6 +174,7 @@ def main():
     parser.add_argument('--datetime', default='')
     parser.add_argument('--location', default='')
     parser.add_argument('--playback-speed', default='')
+    parser.add_argument('--coordinates', default='')
 
     args = parser.parse_args()
 
@@ -172,6 +196,7 @@ def main():
         datetime_str=datetime_str,
         location=args.location,
         playback_speed=args.playback_speed,
+        coordinates=args.coordinates,
     )
 
     print(f"panel_height={panel_height}")
