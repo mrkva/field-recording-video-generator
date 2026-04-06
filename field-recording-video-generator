@@ -496,34 +496,42 @@ build_ffmpeg_command() {
         filter_complex+="[info][spec_final]vstack[combined];"
     fi
 
-    # Timecode overlay (using pre-rendered image sequence — no drawtext needed)
+    # Timecode overlay via drawtext
     if [[ -n "$timecode_datetime" ]]; then
-        local tc_dir="${TMPDIR}/timecode"
-        local tc_output
-        tc_output=$("$PYTHON" "${LIB_DIR}/render_timecode.py" \
-            --output-dir "$tc_dir" \
-            --start-datetime "$timecode_datetime" \
-            --duration "$duration" \
-            --font-size "$font_size" \
-            --speed-factor "$speed_factor")
+        local tc_epoch
+        tc_epoch=$("$PYTHON" -c "
+import datetime, sys
+dt_str = '${timecode_datetime}'
+for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M', '%Y-%m-%d'):
+    try:
+        dt = datetime.datetime.strptime(dt_str, fmt)
+        print(int(dt.timestamp()))
+        sys.exit(0)
+    except ValueError:
+        continue
+print(0)
+")
 
-        local tc_frame_w tc_frame_h
-        tc_frame_w=$(echo "$tc_output" | grep "tc_frame_w=" | cut -d= -f2)
-        tc_frame_h=$(echo "$tc_output" | grep "tc_frame_h=" | cut -d= -f2)
-
-        if [[ -n "$tc_frame_w" ]]; then
-            local tc_idx="$next_idx"
-            # Add timecode image sequence as input at 1fps
-            inputs+=(-framerate 1 -i "${tc_dir}/tc_%06d.png")
-
+        if [[ "$tc_epoch" != "0" ]]; then
+            local tc_font="${LIB_DIR}/VCR_OSD_MONO.ttf"
+            if [[ ! -f "$tc_font" ]]; then
+                tc_font="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+            fi
             local tc_margin=20
-            local tc_x=$((video_w - tc_frame_w - tc_margin))
-            local tc_y=$((video_h - tc_frame_h - tc_margin))
 
-            # Scale timecode to video fps, then overlay on combined
-            filter_complex+="[${tc_idx}:v]fps=${fps}[tc_fps];"
-            filter_complex+="[combined][tc_fps]overlay=x=${tc_x}:y=${tc_y}:shortest=1[tc_final];"
-            filter_complex+="[tc_final]format=yuv420p[outv]"
+            # setpts trick: scale PTS so drawtext sees original recording time,
+            # then restore for correct video timing
+            filter_complex+="[combined]setpts=PTS/${speed_factor}[tc_scaled];"
+            filter_complex+="[tc_scaled]drawtext="
+            filter_complex+="fontfile=${tc_font}:"
+            filter_complex+="fontsize=${font_size}:"
+            filter_complex+="fontcolor=white@0.9:"
+            filter_complex+="shadowcolor=black@0.7:shadowx=2:shadowy=2:"
+            filter_complex+="x=w-tw-${tc_margin}:y=h-th-${tc_margin}:"
+            filter_complex+="text='%{pts\:localtime\:${tc_epoch}\:%Y-%m-%dT%H\\\\\:%M\\\\\:%S}'"
+            filter_complex+="[tc_drawn];"
+            filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[tc_restored];"
+            filter_complex+="[tc_restored]format=yuv420p[outv]"
         else
             filter_complex+="[combined]format=yuv420p[outv]"
         fi
