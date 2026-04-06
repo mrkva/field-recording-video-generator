@@ -337,6 +337,11 @@ interactive_dialogue() {
     msg "${DIM}Try 50-100 for long ambient, 200 (default) for general, 400-800 for bird calls.${RESET}"
     SPEC_PPS=$(ask "Spectrogram detail (pixels/sec)" "200")
 
+    msg ""
+    msg "${DIM}Dynamic range controls spectrogram contrast. Lower = more contrast.${RESET}"
+    msg "${DIM}Try 40-60 for detailed patterns, 90 for wide dynamic range.${RESET}"
+    DYNAMIC_RANGE=$(ask "Dynamic range (dB)" "55")
+
     NORMALIZE_AUDIO=$(ask "Normalize audio to -16 LUFS? (y/n)" "y")
     if [[ "$has_timecode" == "y" ]]; then
         SHOW_TIMECODE="y"
@@ -797,6 +802,7 @@ quick_defaults() {
     FREQ_GRID="n"
     FFT_WINDOW="2048"
     SPEC_PPS="200"
+    DYNAMIC_RANGE="55"
     NORMALIZE_AUDIO="y"
     SHOW_TIMECODE="y"
     OUTPUT_FILE="${input_file%.*}_video.mp4"
@@ -947,7 +953,7 @@ main() {
         --original-sr "$AUDIO_SAMPLE_RATE" \
         $grid_flag \
         --fft-window "$FFT_WINDOW" \
-        --dynamic-range 90
+        --dynamic-range "$DYNAMIC_RANGE"
 
     # Stage 4: Render overlays
     echo -e "  ${CYAN}[4/6]${RESET} Rendering frequency scale overlay..."
