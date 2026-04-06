@@ -585,7 +585,7 @@ print(0)
             filter_complex+="fontsize=${font_size}:"
             filter_complex+="fontcolor=white:"
             filter_complex+="borderw=3:bordercolor=black:"
-            filter_complex+="x=w-tw-${tc_margin}:y=h-th-${tc_margin}:"
+            filter_complex+="x=w-tw-${tc_margin}:y=${info_h}+${tc_margin}:"
             filter_complex+="text='%{pts\:localtime\:${tc_epoch}\:%Y-%m-%dT%H\\\\\:%M\\\\\:%S}'"
             filter_complex+="[tc_drawn];"
             filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[tc_restored];"
