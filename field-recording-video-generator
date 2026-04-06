@@ -87,6 +87,13 @@ if m:
     if 1990 <= int(y) <= 2099:
         print(f'{y}-{mo}-{d}T{h}:{mi}:{s}')
         sys.exit(0)
+# ISO format without seconds: 2026-04-04T04_26 or 2026-04-04T04:26
+m = re.search(r'(\d{4})-(\d{2})-(\d{2})[T_\- ](\d{2})[_\-:](\d{2})(?!\d)', basename)
+if m:
+    y,mo,d,h,mi = m.groups()
+    if 1990 <= int(y) <= 2099:
+        print(f'{y}-{mo}-{d}T{h}:{mi}:00')
+        sys.exit(0)
 # Compact format: YYYYMMDD_HHMMSS or YYYYMMDDTHHMMSS
 m = re.search(r'(\d{4})(\d{2})(\d{2})[_\-T](\d{2})(\d{2})(\d{2})', basename)
 if m:
@@ -525,8 +532,8 @@ print(0)
             filter_complex+="[tc_scaled]drawtext="
             filter_complex+="fontfile=${tc_font}:"
             filter_complex+="fontsize=${font_size}:"
-            filter_complex+="fontcolor=white@0.9:"
-            filter_complex+="shadowcolor=black@0.7:shadowx=2:shadowy=2:"
+            filter_complex+="fontcolor=white:"
+            filter_complex+="borderw=3:bordercolor=black:"
             filter_complex+="x=w-tw-${tc_margin}:y=h-th-${tc_margin}:"
             filter_complex+="text='%{pts\:localtime\:${tc_epoch}\:%Y-%m-%dT%H\\\\\:%M\\\\\:%S}'"
             filter_complex+="[tc_drawn];"
