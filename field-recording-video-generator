@@ -642,14 +642,16 @@ for pos in range(cycle_len):
     window = window.replace(':', '\\\\:')
 
     dt_out = f'stxt_{dt_idx}_{pos}'
-    # Enable based on scroll position with 5-second delay
-    # For t<5: show pos 0 (static). For t>=5: advance 1 char/sec.
-    esc_comma = chr(92) + ','
+    # Enable based on scroll position with 5-second delay.
+    # Use floor(t) first then subtract — avoids float precision glitch
+    # where floor(t-5) gives wrong result at exact second boundaries.
+    # max(0,...) ensures mod never gets negative input.
+    ec = chr(92) + ','  # escaped comma for ffmpeg
+    scroll_expr = f'mod(max(0{ec}floor(t)-5){ec}{cycle_len})'
     if pos == 0:
-        # Active during initial 5s hold AND when scroll cycles back to pos 0
-        enable = f\"enable='if(lt(t{esc_comma}5){esc_comma}1{esc_comma}eq(mod(floor(t-5){esc_comma}{cycle_len}){esc_comma}0))'\"
+        enable = f\"enable='if(lt(t{ec}5){ec}1{ec}eq({scroll_expr}{ec}0))'\"
     else:
-        enable = f\"enable='if(lt(t{esc_comma}5){esc_comma}0{esc_comma}eq(mod(floor(t-5){esc_comma}{cycle_len}){esc_comma}{pos}))'\"
+        enable = f\"enable='if(lt(t{ec}5){ec}0{ec}eq({scroll_expr}{ec}{pos}))'\"
 
     filters += f'[{dt_in}]drawtext='
     filters += f'fontfile={font}:'
