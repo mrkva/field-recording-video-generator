@@ -80,7 +80,7 @@ def render_info_panel(output_png, width, font_size,
     if subject:
         entries.append(("SUBJ", subject.upper()))
     if datetime_str:
-        entries.append(("DATE", datetime_str.upper()))
+        entries.append(("TIME", datetime_str.upper()))
     if location:
         entries.append(("LOC", location.upper()))
     if recorder:

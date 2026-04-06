@@ -218,6 +218,11 @@ probe_audio() {
     if [[ -z "$AUDIO_DURATION" || "$AUDIO_DURATION" == "N/A" ]]; then
         AUDIO_DURATION=$(sox --info -D "$input" 2>/dev/null || echo "0")
     fi
+
+    # Extract encoded_by from BWF metadata
+    AUDIO_ENCODED_BY=$(ffprobe -v error -show_entries format_tags=encoded_by \
+        -of csv=p=0 "$input" 2>/dev/null || echo "")
+    AUDIO_ENCODED_BY="${AUDIO_ENCODED_BY%%[[:space:]]}"
 }
 
 # ============================================================================
@@ -273,7 +278,7 @@ interactive_dialogue() {
     fi
 
     META_SUBJECT=$(ask "Recorded subject" "")
-    META_RECORDER=$(ask "Recorded with" "")
+    META_RECORDER=$(ask "Recorded with" "$AUDIO_ENCODED_BY")
     META_LOCATION=$(ask "Location (optional, Enter to skip)" "")
     if [[ -n "$META_LOCATION" ]]; then
         META_COORDINATES=$(ask "Location coordinates for map (lat,lon, Enter to skip)" "")
@@ -638,7 +643,7 @@ quick_defaults() {
 
     META_DATETIME="${detected_datetime:-$(date +%Y-%m-%dT%H:%M:%S)}"
     META_SUBJECT="Test recording"
-    META_RECORDER="Unknown"
+    META_RECORDER="${AUDIO_ENCODED_BY:-Unknown}"
     META_LOCATION="Ashdown Forest, UK"
     META_COORDINATES="51.07, 0.03"
     FREQ_MIN="20"
