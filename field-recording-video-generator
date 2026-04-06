@@ -241,10 +241,10 @@ interactive_dialogue() {
     PLAYBACK_SPEED_INPUT=$(ask "Playback speed" "1x")
 
     msg ""
-    PRESET=$(ask "Preset (square / reel)" "square")
+    PRESET=$(ask "Preset (square / reel)" "reel")
     if [[ "$PRESET" != "square" && "$PRESET" != "reel" ]]; then
-        msg "${YELLOW}Unknown preset '${PRESET}', defaulting to square.${RESET}"
-        PRESET="square"
+        msg "${YELLOW}Unknown preset '${PRESET}', defaulting to reel.${RESET}"
+        PRESET="reel"
     fi
 
     PHOTO_PATH=$(ask "Photo path (optional, Enter to skip)" "")
@@ -524,7 +524,7 @@ quick_defaults() {
     FREQ_MIN="20"
     FREQ_MAX="$nyquist"
     PLAYBACK_SPEED_INPUT="1x"
-    PRESET="square"
+    PRESET="reel"
     PHOTO_PATH=""
     FREQ_GRID="y"
     FFT_WINDOW="2048"
