@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 # Font loading
 # ---------------------------------------------------------------------------
 FONT_PATHS = [
+    os.path.join(os.path.dirname(__file__), "VCR_OSD_MONO.ttf"),
     "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
     "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
     "/System/Library/Fonts/Menlo.ttc",

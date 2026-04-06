@@ -6,6 +6,7 @@ for readability against any spectrogram content. Like a drone camera OSD.
 """
 
 import argparse
+import os
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -92,6 +93,7 @@ def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=3
     """Render frequency scale — no background, outlined text + ticks."""
 
     font_paths = [
+        os.path.join(os.path.dirname(__file__), "VCR_OSD_MONO.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
         "/System/Library/Fonts/Menlo.ttc",

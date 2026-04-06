@@ -7,6 +7,7 @@ Falls back gracefully (returns None) if tiles can't be fetched.
 
 import math
 import io
+import os
 import urllib.request
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
@@ -142,6 +143,7 @@ def render_map_widget(lat, lon, widget_size=180, font_size=0):
 
     # Coordinate text at bottom
     font_paths = [
+        os.path.join(os.path.dirname(__file__), "VCR_OSD_MONO.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
         "/System/Library/Fonts/Menlo.ttc",

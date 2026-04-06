@@ -43,6 +43,7 @@ def render_info_panel(output_png, width, font_size,
     """
 
     font_paths = [
+        os.path.join(os.path.dirname(__file__), "VCR_OSD_MONO.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf",
         "/System/Library/Fonts/Menlo.ttc",
