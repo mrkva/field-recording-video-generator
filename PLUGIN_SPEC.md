@@ -62,11 +62,14 @@ Two types of dynamic text are rendered via ffmpeg `drawtext` filters:
 
 ### Preset system
 Config files in `presets/` define output dimensions:
-- `reel.conf` — 1080x1920 (vertical, default)
+- `ig_reel.conf` — 1080x1920 (vertical, Instagram-safe, default)
+- `reel.conf` — 1080x1920 (vertical, full-bleed)
 - `square.conf` — 1080x1080
 - `landscape.conf` — 1920x1080
 
 Each preset sets: `VIDEO_WIDTH`, `VIDEO_HEIGHT`, `PHOTO_BAND_HEIGHT`, `INFO_FONT_SIZE`, `FPS`
+
+The `ig_reel` preset additionally sets `SAFE_TOP=250` and `SAFE_BOTTOM=440` to keep content within Instagram Reels/Stories safe zones (avoids overlay by username, follow button at top and like/comment/share buttons, caption at bottom). When safe zone values are set, the content is padded with black bars and all overlay positions (map, timecode, scrolling text) are adjusted accordingly.
 
 ### Key parameters for integration
 

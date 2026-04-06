@@ -317,10 +317,10 @@ interactive_dialogue() {
     PLAYBACK_SPEED_INPUT=$(ask "Playback speed" "1x")
 
     msg ""
-    PRESET=$(ask "Preset (square / reel / landscape)" "reel")
-    if [[ "$PRESET" != "square" && "$PRESET" != "reel" && "$PRESET" != "landscape" ]]; then
-        msg "${YELLOW}Unknown preset '${PRESET}', defaulting to reel.${RESET}"
-        PRESET="reel"
+    PRESET=$(ask "Preset (ig_reel / reel / square / landscape)" "ig_reel")
+    if [[ ! -f "${PRESETS_DIR}/${PRESET}.conf" ]]; then
+        msg "${YELLOW}Unknown preset '${PRESET}', defaulting to ig_reel.${RESET}"
+        PRESET="ig_reel"
     fi
 
     PHOTO_PATH=$(ask "Photo path (optional, Enter to skip)" "")
@@ -594,18 +594,29 @@ build_ffmpeg_command() {
     filter_complex+="[spec_cursor][scale_loop]overlay=x=0:y=0:shortest=1[spec_final];"
     filter_complex+="[1:v]scale=${viewport_w}:${info_h}[info];"
 
+    local safe_top="${SAFE_TOP:-0}"
+    local safe_bottom="${SAFE_BOTTOM:-0}"
+
     if [[ -n "$photo" ]]; then
         filter_complex+="[${photo_idx}:v]scale=${viewport_w}:${photo_band_h}:force_original_aspect_ratio=decrease,"
         filter_complex+="pad=${viewport_w}:${photo_band_h}:(ow-iw)/2:(oh-ih)/2:color=black[photo_scaled];"
         filter_complex+="[info][spec_final]vstack[top];"
-        filter_complex+="[top][photo_scaled]vstack[combined];"
+        filter_complex+="[top][photo_scaled]vstack[content];"
     else
-        filter_complex+="[info][spec_final]vstack[combined];"
+        filter_complex+="[info][spec_final]vstack[content];"
+    fi
+
+    # Pad content into full video frame (safe zone margins)
+    if [[ "$safe_top" -gt 0 || "$safe_bottom" -gt 0 ]]; then
+        filter_complex+="[content]pad=${video_w}:${video_h}:0:${safe_top}:black[combined];"
+    else
+        filter_complex+="[content]copy[combined];"
     fi
 
     # Overlay map animation on info panel if available
     if [[ -n "$map_anim_idx" ]]; then
-        filter_complex+="[combined][${map_anim_idx}:v]overlay=x=${map_x}:y=${map_y}:shortest=1[map_combined];"
+        local map_y_adj=$((map_y + safe_top))
+        filter_complex+="[combined][${map_anim_idx}:v]overlay=x=${map_x}:y=${map_y_adj}:shortest=1[map_combined];"
         local combined_label="map_combined"
     else
         local combined_label="combined"
@@ -626,6 +637,7 @@ build_ffmpeg_command() {
             # Format: scroll_field=Y_POS:ESCAPED_TEXT
             local sf_data="${sf#scroll_field=}"
             local sf_y="${sf_data%%:*}"
+            sf_y=$((sf_y + safe_top))
             local sf_text="${sf_data#*:}"
             # Unescape from Python output
             sf_text="${sf_text//\\\\:/\:}"
@@ -694,6 +706,7 @@ print(f'LAST_IDX={dt_idx}')
     fi
 
     # Dynamic timecode in info panel via drawtext
+    local tc_y_adj=$((timecode_y + safe_top))
     if [[ -n "$timecode_datetime" && -n "$timecode_x" && "$timecode_x" != "0" ]]; then
         local tc_epoch
         tc_epoch=$("$PYTHON" -c "
@@ -715,7 +728,7 @@ print(0)
             filter_complex+="fontfile=${dt_font}:"
             filter_complex+="fontsize=${font_size}:"
             filter_complex+="fontcolor=0xE6E6E6:"
-            filter_complex+="x=${timecode_x}:y=${timecode_y}:"
+            filter_complex+="x=${timecode_x}:y=${tc_y_adj}:"
             filter_complex+="text='%{pts\:localtime\:${tc_epoch}\:%Y-%m-%dT%H\\\\\:%M\\\\\:%S}'"
             filter_complex+="[tc_drawn];"
             filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[final_dt];"
@@ -779,7 +792,7 @@ quick_defaults() {
     FREQ_MIN="20"
     FREQ_MAX="$nyquist"
     PLAYBACK_SPEED_INPUT="1x"
-    PRESET="reel"
+    PRESET="ig_reel"
     PHOTO_PATH=""
     FREQ_GRID="n"
     FFT_WINDOW="2048"
@@ -901,12 +914,14 @@ main() {
     MAP_Y=$(echo "$panel_output" | grep "map_y=" | cut -d= -f2 || true)
     MAP_SIZE=$(echo "$panel_output" | grep "map_size=" | cut -d= -f2 || true)
 
-    # Calculate spectrogram height from remaining space
+    # Calculate spectrogram height from remaining space (respecting safe zones)
+    local safe_top="${SAFE_TOP:-0}"
+    local safe_bottom="${SAFE_BOTTOM:-0}"
     local SPEC_HEIGHT
     if [[ -n "$PHOTO_PATH" ]]; then
-        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT - PHOTO_BAND_HEIGHT))
+        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT - PHOTO_BAND_HEIGHT - safe_top - safe_bottom))
     else
-        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT))
+        SPEC_HEIGHT=$((VIDEO_HEIGHT - INFO_PANEL_HEIGHT - safe_top - safe_bottom))
     fi
 
     # Stage 3: Generate spectrogram
