@@ -1,27 +1,39 @@
 # field-recording-video-generator
 
-Generate videos from WAV field recordings with scrolling logarithmic spectrogram, playback cursor, metadata overlay, and optional photo.
+A shell script that turns a WAV field recording into a video with a scrolling
+linear spectrogram, metadata overlay, and playback cursor. The visual style is
+inspired by NASA telemetry displays and industrial camera footage.
+
+> **Fair warning:** This tool was vibe-coded with AI assistance. It works, but
+> it has rough edges. Use at your own risk, expect quirks, and feel free to fix
+> things. No warranty, no guarantees, no refunds.
+
+## What it produces
+
+- Scrolling linear spectrogram with configurable FFT window and frequency range
+- Info panel with recording metadata (file, subject, date, location, equipment, sample info, playback speed)
+- Optional retro monochrome map widget showing recording coordinates
+- Green glow playback cursor
+- Optional frequency grid overlay
+- Optional photo band
+- 60 fps output at 1080x1080 (square) or 1080x1920 (reel)
 
 ## Install
 
-### 1. System dependencies
+### System dependencies
 
-**macOS:**
 ```bash
+# macOS
 brew install ffmpeg sox python3
-```
 
-**Ubuntu/Debian:**
-```bash
+# Ubuntu / Debian
 sudo apt install ffmpeg sox python3 python3-venv
-```
 
-**Arch:**
-```bash
+# Arch
 sudo pacman -S ffmpeg sox python
 ```
 
-### 2. Clone and run
+### Clone and run
 
 ```bash
 git clone https://github.com/mrkva/field-recording-video-generator.git
@@ -29,9 +41,11 @@ cd field-recording-video-generator
 ./field-recording-video-generator recording.wav
 ```
 
-Python packages (numpy, scipy, matplotlib, Pillow) are installed automatically into a local `.venv/` on first run. No system-wide pip installs needed.
+Python packages (numpy, scipy, matplotlib, Pillow) are installed automatically
+into a local `.venv/` on first run. No system-wide pip installs needed.
 
 To add to your PATH:
+
 ```bash
 sudo ln -sf "$(pwd)/field-recording-video-generator" /usr/local/bin/field-recording-video-generator
 ```
@@ -39,37 +53,94 @@ sudo ln -sf "$(pwd)/field-recording-video-generator" /usr/local/bin/field-record
 ## Usage
 
 ```bash
-field-recording-video-generator recording.wav
+./field-recording-video-generator recording.wav
 ```
 
-The program will interactively ask for:
+The program walks you through an interactive dialogue:
 
-- **Recorded subject** — what was recorded
-- **Recorded with** — recording device
-- **Date/time** — auto-detected from filename (YYYYMMDD_HHMMSS patterns)
-- **Location** — optional
-- **Playback speed** — for ultrasonic content (e.g. `192000:44100` to slow a 192kHz bat recording to audible range)
-- **Preset** — `square` (1080x1080) or `reel` (1080x1920)
-- **Photo** — optional image to include in the video
+| Prompt | Default | Description |
+|---|---|---|
+| Date/time | auto-detected from filename or file metadata | ISO format, e.g. `2024-03-15T14:30:22` |
+| Recorded subject | -- | What was recorded |
+| Recorded with | -- | Equipment used |
+| Location | *(optional)* | Recording location name |
+| Coordinates | *(optional, if location set)* | `lat,lon` for the map widget |
+| Freq min (Hz) | `20` | Spectrogram lower bound |
+| Freq max (Hz) | Nyquist | Spectrogram upper bound |
+| Playback speed | 1x | `SOURCE:TARGET` (e.g. `192000:44100`) or divisor |
+| Preset | `square` | `square` (1080x1080) or `reel` (1080x1920) |
+| Photo | *(optional)* | Path to a photo to embed in the video |
+| Frequency grid | `y` | Draw grid lines on the spectrogram |
+| FFT window size | `2048` | STFT window (e.g. `512`, `1024`, `4096`, `8192`) |
+| Normalize audio | `y` | Two-pass loudnorm to -16 LUFS |
+| Output file | `{input}_video.mp4` | Output path |
 
-## Playback speed
+### Playback speed
 
-For ultrasonic recordings (e.g. bat echolocation at 192kHz), use the playback speed setting to reinterpret the sample rate. This slows the audio to make ultrasound audible without altering the output sample rate.
+For ultrasonic recordings (e.g. bat echolocation at 192kHz), use the playback
+speed setting to reinterpret the sample rate. This slows the audio to make
+ultrasound audible without altering the output sample rate.
 
 Formats:
-- `192000:44100` — reinterpret 192kHz as 44.1kHz (4.35× slower)
-- `4.35` — slow by a factor of 4.35
-- `1x` — normal speed (default)
+- `192000:44100` -- reinterpret 192kHz as 44.1kHz (4.35x slower)
+- `4.35` -- slow by a factor of 4.35
+- `1x` -- normal speed (default)
+
+### FFT window size
+
+The spectrogram is computed using a Short-Time Fourier Transform with a Hann
+window and 87.5% overlap. The window size controls the trade-off between time
+and frequency resolution:
+
+- **Smaller windows** (512, 1024) -- better time resolution, good for
+  transient-heavy recordings (clicks, impacts, birdsong)
+- **Larger windows** (4096, 8192) -- better frequency resolution, good for
+  tonal content (drones, engines, sustained notes)
+
+## How it works
+
+1. **Probe** the input WAV for sample rate, bit depth, channels, duration, and codec
+2. **Prepare audio** -- optionally reinterpret sample rate for ultrasonic
+   recordings (`asetrate` + `aresample`), then normalize loudness with a
+   two-pass `loudnorm` filter
+3. **Generate spectrogram** -- compute STFT in 30-second chunks (for memory
+   efficiency), apply colormap, and write a wide PNG strip
+4. **Render overlays** -- info panel, frequency scale, cursor image, and
+   optional map widget (fetched from OpenStreetMap tiles with a retro
+   dark/inverted filter)
+5. **Compose video** -- ffmpeg scrolls (crops) across the spectrogram strip,
+   overlays the cursor and frequency scale, and stacks the info panel on top
 
 ## Presets
 
+Presets live in `presets/` and set video dimensions, font size, and frame rate:
+
 | Preset | Resolution | Use case |
 |--------|-----------|----------|
-| `square` | 1080×1080 | Instagram post, general social media |
-| `reel` | 1080×1920 | Instagram/TikTok reel (9:16 vertical) |
+| `square` | 1080x1080 | Instagram post, general use |
+| `reel` | 1080x1920 | Instagram/TikTok reel, vertical stories |
 
 ## Output
 
-- Video: H.264, CRF 18, slow preset
-- Audio: AAC 256kbps
+- Video: H.264, CRF 18, slow preset, 60 fps
+- Audio: AAC 256 kbps
 - Container: MP4 with faststart flag
+
+## Project structure
+
+```
+field-recording-video-generator   # main shell script
+lib/
+  generate_spectrogram.py         # STFT + spectrogram image
+  render_info_panel.py            # metadata overlay panel
+  render_freq_scale.py            # frequency scale on left edge
+  render_map_widget.py            # OSM-based retro map widget
+presets/
+  square.conf
+  reel.conf
+requirements.txt
+```
+
+## License
+
+Do whatever you want with it.
