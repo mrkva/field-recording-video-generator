@@ -256,6 +256,7 @@ interactive_dialogue() {
     FREQ_GRID=$(ask "Show frequency grid on spectrogram? (y/n)" "n")
     FFT_WINDOW=$(ask "FFT window size (e.g. 512, 1024, 2048, 4096, 8192)" "2048")
     NORMALIZE_AUDIO=$(ask "Normalize audio to -16 LUFS? (y/n)" "y")
+    SHOW_TIMECODE=$(ask "Show running timecode? (y/n)" "y")
 
     # Output filename
     local default_output="${input_file%.*}_video.mp4"
@@ -439,6 +440,9 @@ build_ffmpeg_command() {
     local video_h="${13}"
     local photo_band_h="${14}"
     local freq_scale_png="${15}"
+    local timecode_datetime="${16}"
+    local speed_factor="${17}"
+    local font_size="${18}"
 
     # Generate cursor image
     local cursor_png="${TMPDIR}/cursor.png"
@@ -487,9 +491,56 @@ build_ffmpeg_command() {
         filter_complex+="pad=${viewport_w}:${photo_band_h}:(ow-iw)/2:(oh-ih)/2:color=black[photo_scaled];"
         filter_complex+="[info][spec_final]vstack[top];"
         filter_complex+="[top][photo_scaled]vstack[combined];"
-        filter_complex+="[combined]format=yuv420p[outv]"
     else
         filter_complex+="[info][spec_final]vstack[combined];"
+    fi
+
+    # Timecode overlay
+    if [[ -n "$timecode_datetime" ]]; then
+        # Convert datetime to epoch seconds
+        local tc_epoch
+        tc_epoch=$("$PYTHON" -c "
+import datetime, sys
+dt_str = '${timecode_datetime}'
+for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M', '%Y-%m-%d'):
+    try:
+        dt = datetime.datetime.strptime(dt_str, fmt)
+        print(int(dt.timestamp()))
+        sys.exit(0)
+    except ValueError:
+        continue
+print(0)
+")
+
+        if [[ "$tc_epoch" != "0" ]]; then
+            # Find font file for drawtext
+            local tc_font="${LIB_DIR}/VCR_OSD_MONO.ttf"
+            if [[ ! -f "$tc_font" ]]; then
+                tc_font="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+            fi
+
+            local tc_fmt='%Y-%m-%dT%H\\:%M\\:%S'
+            local tc_margin=20
+
+            # Use setpts to scale PTS for correct timecode at non-1x speeds
+            # PTS/speed_factor gives original recording time progression
+            filter_complex+="[combined]setpts=PTS/${speed_factor}[tc_scaled];"
+            filter_complex+="[tc_scaled]drawtext="
+            filter_complex+="fontfile='${tc_font}':"
+            filter_complex+="fontsize=${font_size}:"
+            filter_complex+="fontcolor=white:"
+            filter_complex+="x=w-tw-${tc_margin}:"
+            filter_complex+="y=h-th-${tc_margin}:"
+            filter_complex+="text='%{pts\\:localtime\\:${tc_epoch}\\:${tc_fmt}}':"
+            filter_complex+="shadowcolor=black:shadowx=2:shadowy=2"
+            filter_complex+="[tc_drawn];"
+            # Restore original PTS timing
+            filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[tc_final];"
+            filter_complex+="[tc_final]format=yuv420p[outv]"
+        else
+            filter_complex+="[combined]format=yuv420p[outv]"
+        fi
+    else
         filter_complex+="[combined]format=yuv420p[outv]"
     fi
 
@@ -529,6 +580,7 @@ quick_defaults() {
     FREQ_GRID="n"
     FFT_WINDOW="2048"
     NORMALIZE_AUDIO="y"
+    SHOW_TIMECODE="y"
     OUTPUT_FILE="${input_file%.*}_video.mp4"
 
     msg ""
@@ -663,6 +715,12 @@ main() {
 
     # Stage 5: Compose video
     echo -e "  ${CYAN}[5/5]${RESET} Compositing video with ffmpeg..."
+    # Timecode: pass datetime if enabled, empty string otherwise
+    local tc_datetime=""
+    if [[ "$SHOW_TIMECODE" == "y" || "$SHOW_TIMECODE" == "Y" || "$SHOW_TIMECODE" == "yes" ]]; then
+        tc_datetime="$META_DATETIME"
+    fi
+
     build_ffmpeg_command \
         "$spec_png" \
         "$info_png" \
@@ -678,7 +736,10 @@ main() {
         "$VIDEO_WIDTH" \
         "$VIDEO_HEIGHT" \
         "$PHOTO_BAND_HEIGHT" \
-        "$freq_scale_png"
+        "$freq_scale_png" \
+        "$tc_datetime" \
+        "$SPEED_FACTOR" \
+        "$INFO_FONT_SIZE"
 
     echo ""
     echo -e "${GREEN}${BOLD}Done!${RESET} Output: ${OUTPUT_FILE}"
