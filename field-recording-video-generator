@@ -88,10 +88,31 @@ try:
         capture_output=True, text=True
     )
     tags = json.loads(result.stdout).get('format', {}).get('tags', {})
-    orig_date = tags.get('origination_date', '') or tags.get('date', '')
-    orig_time = tags.get('origination_time', '')
+    orig_date = (tags.get('origination_date', '') or
+                 tags.get('date', '') or '')
+    orig_time = (tags.get('origination_time', '') or
+                 tags.get('creation_time', '') or '')
+    time_ref = tags.get('time_reference', '')
+
+    # If we have a time_reference (samples since midnight), compute time from it
+    if orig_date and time_ref and not orig_time:
+        try:
+            sr_out = subprocess.run(
+                ['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+                 '-show_entries', 'stream=sample_rate', '-of', 'csv=p=0',
+                 filepath],
+                capture_output=True, text=True
+            )
+            sr = int(sr_out.stdout.strip())
+            total_secs = int(time_ref) / sr
+            h = int(total_secs // 3600)
+            m = int((total_secs % 3600) // 60)
+            s = int(total_secs % 60)
+            orig_time = f'{h:02d}:{m:02d}:{s:02d}'
+        except Exception:
+            pass
+
     if orig_date and len(orig_date) >= 10:
-        # origination_date: '2026-04-04' or '2026:04:04'
         orig_date = orig_date[:10].replace(':', '-')
         if orig_time and len(orig_time) >= 8:
             print(f'{orig_date}T{orig_time[:8]}')
