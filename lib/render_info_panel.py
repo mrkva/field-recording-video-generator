@@ -35,7 +35,7 @@ def parse_datetime_from_filename(filename):
 def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
                       location="", playback_speed="", coordinates="",
-                      sample_info=""):
+                      sample_info="", dynamic_time=False):
     """Render info panel — NASA/telemetry camera overlay aesthetic.
 
     All caps, monospace, tight layout with technical formatting.
@@ -132,6 +132,8 @@ def render_info_panel(output_png, width, font_size,
     img = Image.new('RGB', (width, total_h), color=bg_color)
     draw = ImageDraw.Draw(img)
 
+    timecode_x = 0
+    timecode_y = 0
     y = padding_y
     for i, (label, text) in enumerate(all_lines):
         if label is not None and i > 0:
@@ -142,7 +144,12 @@ def render_info_panel(output_png, width, font_size,
             padded_label = label.ljust(label_width)
             draw.text((padding_x, y), padded_label, fill=label_color, font=font)
 
-        draw.text((value_x, y), text, fill=value_color, font=font)
+        # If dynamic_time, skip rendering the TIME value (drawtext will handle it)
+        if dynamic_time and label == "TIME":
+            timecode_x = int(value_x)
+            timecode_y = int(y)
+        else:
+            draw.text((value_x, y), text, fill=value_color, font=font)
         y += line_height
 
     # Render map widget in top-right corner if coordinates provided
@@ -171,7 +178,7 @@ def render_info_panel(output_png, width, font_size,
               fill=separator_color, width=1)
 
     img.save(output_png)
-    return total_h
+    return total_h, timecode_x, timecode_y
 
 
 def main():
@@ -187,6 +194,8 @@ def main():
     parser.add_argument('--playback-speed', default='')
     parser.add_argument('--sample-info', default='')
     parser.add_argument('--coordinates', default='')
+    parser.add_argument('--dynamic-time', action='store_true',
+                        help='Leave TIME value blank for drawtext overlay')
 
     args = parser.parse_args()
 
@@ -198,7 +207,7 @@ def main():
         else:
             datetime_str = "UNKNOWN"
 
-    panel_height = render_info_panel(
+    panel_height, tc_x, tc_y = render_info_panel(
         output_png=args.output,
         width=args.width,
         font_size=args.font_size,
@@ -210,9 +219,13 @@ def main():
         playback_speed=args.playback_speed,
         sample_info=args.sample_info,
         coordinates=args.coordinates,
+        dynamic_time=args.dynamic_time,
     )
 
     print(f"panel_height={panel_height}")
+    if args.dynamic_time:
+        print(f"timecode_x={tc_x}")
+        print(f"timecode_y={tc_y}")
 
 
 if __name__ == '__main__':

@@ -144,15 +144,10 @@ def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=3
     minor_tick_color = (180, 180, 180, 140)
     outline_color = (0, 0, 0, 220)
 
-    # Vertical reference line along tick start
-    draw_outlined_line(draw, (tick_start, 0, tick_start, height),
-                       fill=(255, 255, 255, 80), outline=(0, 0, 0, 60), width=1)
-
-    # Minor ticks — thin, no label
+    # Minor ticks — thin, no label, no outline
     for freq in minors:
         y = freq_to_y(freq, f_lo, f_hi, height)
-        draw_outlined_line(draw, (tick_start, y, minor_tick_end, y),
-                           fill=minor_tick_color, outline=(0, 0, 0, 100), width=1)
+        draw.line([(tick_start, y), (minor_tick_end, y)], fill=minor_tick_color, width=1)
 
     # Major ticks + labels
     for freq in majors:

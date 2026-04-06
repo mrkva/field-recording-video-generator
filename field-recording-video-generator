@@ -299,8 +299,8 @@ interactive_dialogue() {
     PLAYBACK_SPEED_INPUT=$(ask "Playback speed" "1x")
 
     msg ""
-    PRESET=$(ask "Preset (square / reel)" "reel")
-    if [[ "$PRESET" != "square" && "$PRESET" != "reel" ]]; then
+    PRESET=$(ask "Preset (square / reel / landscape)" "reel")
+    if [[ "$PRESET" != "square" && "$PRESET" != "reel" && "$PRESET" != "landscape" ]]; then
         msg "${YELLOW}Unknown preset '${PRESET}', defaulting to reel.${RESET}"
         PRESET="reel"
     fi
@@ -501,6 +501,8 @@ build_ffmpeg_command() {
     local timecode_datetime="${16}"
     local speed_factor="${17}"
     local font_size="${18}"
+    local timecode_x="${19}"
+    local timecode_y="${20}"
 
     # Generate cursor image
     local cursor_png="${TMPDIR}/cursor.png"
@@ -554,8 +556,8 @@ build_ffmpeg_command() {
         filter_complex+="[info][spec_final]vstack[combined];"
     fi
 
-    # Timecode overlay via drawtext
-    if [[ -n "$timecode_datetime" ]]; then
+    # Dynamic timecode in info panel via drawtext
+    if [[ -n "$timecode_datetime" && -n "$timecode_x" && "$timecode_x" != "0" ]]; then
         local tc_epoch
         tc_epoch=$("$PYTHON" -c "
 import datetime, sys
@@ -575,7 +577,6 @@ print(0)
             if [[ ! -f "$tc_font" ]]; then
                 tc_font="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
             fi
-            local tc_margin=20
 
             # setpts trick: scale PTS so drawtext sees original recording time,
             # then restore for correct video timing
@@ -583,9 +584,8 @@ print(0)
             filter_complex+="[tc_scaled]drawtext="
             filter_complex+="fontfile=${tc_font}:"
             filter_complex+="fontsize=${font_size}:"
-            filter_complex+="fontcolor=white:"
-            filter_complex+="borderw=3:bordercolor=black:"
-            filter_complex+="x=w-tw-${tc_margin}:y=${info_h}+${tc_margin}:"
+            filter_complex+="fontcolor=rgb(230\\,230\\,230):"
+            filter_complex+="x=${timecode_x}:y=${timecode_y}:"
             filter_complex+="text='%{pts\:localtime\:${tc_epoch}\:%Y-%m-%dT%H\\\\\:%M\\\\\:%S}'"
             filter_complex+="[tc_drawn];"
             filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[tc_restored];"
@@ -727,6 +727,11 @@ main() {
     echo -e "  ${CYAN}[2/5]${RESET} Rendering info panel..."
     local info_png="${TMPDIR}/info_panel.png"
     local panel_output
+    local dynamic_time_flag=""
+    if [[ "$SHOW_TIMECODE" == "y" || "$SHOW_TIMECODE" == "Y" || "$SHOW_TIMECODE" == "yes" ]]; then
+        dynamic_time_flag="--dynamic-time"
+    fi
+
     panel_output=$("$PYTHON" "${LIB_DIR}/render_info_panel.py" \
         --output "$info_png" \
         --width "$VIDEO_WIDTH" \
@@ -738,11 +743,14 @@ main() {
         --location "$META_LOCATION" \
         --playback-speed "$PLAYBACK_LABEL" \
         --sample-info "${AUDIO_SAMPLE_RATE}HZ ${AUDIO_BIT_DEPTH}BIT${AUDIO_FORMAT:+ $AUDIO_FORMAT}" \
-        --coordinates "$META_COORDINATES")
+        --coordinates "$META_COORDINATES" \
+        $dynamic_time_flag)
 
-    # Extract auto-calculated panel height
+    # Extract auto-calculated panel height and timecode position
     local INFO_PANEL_HEIGHT
     INFO_PANEL_HEIGHT=$(echo "$panel_output" | grep "panel_height=" | cut -d= -f2)
+    TIMECODE_X=$(echo "$panel_output" | grep "timecode_x=" | cut -d= -f2)
+    TIMECODE_Y=$(echo "$panel_output" | grep "timecode_y=" | cut -d= -f2)
 
     # Calculate spectrogram height from remaining space
     local SPEC_HEIGHT
@@ -813,7 +821,9 @@ main() {
         "$freq_scale_png" \
         "$tc_datetime" \
         "$SPEED_FACTOR" \
-        "$INFO_FONT_SIZE"
+        "$INFO_FONT_SIZE" \
+        "$TIMECODE_X" \
+        "$TIMECODE_Y"
 
     echo ""
     echo -e "${GREEN}${BOLD}Done!${RESET} Output: ${OUTPUT_FILE}"
