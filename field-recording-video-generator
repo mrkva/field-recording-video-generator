@@ -522,6 +522,20 @@ build_ffmpeg_command() {
     # Cursor x position in viewport (for overlay filter, which supports dynamic expressions)
     local cursor_x="(${scroll_rate}*t)-min(max(0,${scroll_rate}*t-${half_vw}),${spec_total_w}-${viewport_w})-10"
 
+    # Extra parameters (21+)
+    local scroll_value_x="${21:-}"
+    local scroll_value_w="${22:-}"
+    local map_frames_dir="${23:-}"
+    local map_x="${24:-}"
+    local map_y="${25:-}"
+    local map_size="${26:-}"
+    local -a scroll_fields_arr=()
+    shift 26 2>/dev/null || true
+    while [[ $# -gt 0 ]]; do
+        scroll_fields_arr+=("$1")
+        shift
+    done
+
     local filter_complex=""
     local inputs=()
 
@@ -533,9 +547,15 @@ build_ffmpeg_command() {
 
     local next_idx=5
     local photo_idx=""
+    local map_anim_idx=""
     if [[ -n "$photo" ]]; then
         inputs+=(-loop 1 -i "$photo")
         photo_idx="$next_idx"
+        next_idx=$((next_idx + 1))
+    fi
+    if [[ -n "$map_frames_dir" && -d "$map_frames_dir" ]]; then
+        inputs+=(-framerate "$fps" -i "${map_frames_dir}/map_%06d.png")
+        map_anim_idx="$next_idx"
         next_idx=$((next_idx + 1))
     fi
 
@@ -556,24 +576,22 @@ build_ffmpeg_command() {
         filter_complex+="[info][spec_final]vstack[combined];"
     fi
 
-    # Chain of drawtext filters on [combined]
+    # Overlay map animation on info panel if available
+    if [[ -n "$map_anim_idx" ]]; then
+        filter_complex+="[combined][${map_anim_idx}:v]overlay=x=${map_x}:y=${map_y}:shortest=1[map_combined];"
+        local combined_label="map_combined"
+    else
+        local combined_label="combined"
+    fi
+
+    # Chain of drawtext filters
     local dt_font="${LIB_DIR}/VCR_OSD_MONO.ttf"
     if [[ ! -f "$dt_font" ]]; then
         dt_font="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
     fi
 
-    local dt_in="combined"
+    local dt_in="$combined_label"
     local dt_idx=0
-
-    # Scrolling text fields (ticker animation for long values)
-    local scroll_value_x="${21:-}"
-    local scroll_value_w="${22:-}"
-    local -a scroll_fields_arr=()
-    shift 22 2>/dev/null || true
-    while [[ $# -gt 0 ]]; do
-        scroll_fields_arr+=("$1")
-        shift
-    done
 
     if [[ ${#scroll_fields_arr[@]} -gt 0 ]]; then
         for sf in "${scroll_fields_arr[@]}"; do
@@ -772,6 +790,10 @@ main() {
     if [[ "$SHOW_TIMECODE" == "y" || "$SHOW_TIMECODE" == "Y" || "$SHOW_TIMECODE" == "yes" ]]; then
         dynamic_time_flag="--dynamic-time"
     fi
+    local animated_map_flag=""
+    if [[ -n "$META_COORDINATES" ]]; then
+        animated_map_flag="--animated-map"
+    fi
 
     panel_output=$("$PYTHON" "${LIB_DIR}/render_info_panel.py" \
         --output "$info_png" \
@@ -785,7 +807,7 @@ main() {
         --playback-speed "$PLAYBACK_LABEL" \
         --sample-info "${AUDIO_SAMPLE_RATE}HZ ${AUDIO_BIT_DEPTH}BIT${AUDIO_FORMAT:+ $AUDIO_FORMAT}" \
         --coordinates "$META_COORDINATES" \
-        $dynamic_time_flag)
+        $dynamic_time_flag $animated_map_flag)
 
     # Extract auto-calculated panel height and timecode position
     local INFO_PANEL_HEIGHT
@@ -800,6 +822,12 @@ main() {
     done < <(echo "$panel_output" | grep "^scroll_field=" || true)
     SCROLL_VALUE_X=$(echo "$panel_output" | grep "scroll_value_x=" | cut -d= -f2 || true)
     SCROLL_VALUE_W=$(echo "$panel_output" | grep "scroll_value_w=" | cut -d= -f2 || true)
+
+    # Extract map overlay position (for animated map)
+    local MAP_X MAP_Y MAP_SIZE MAP_FRAMES_DIR=""
+    MAP_X=$(echo "$panel_output" | grep "map_x=" | cut -d= -f2 || true)
+    MAP_Y=$(echo "$panel_output" | grep "map_y=" | cut -d= -f2 || true)
+    MAP_SIZE=$(echo "$panel_output" | grep "map_size=" | cut -d= -f2 || true)
 
     # Calculate spectrogram height from remaining space
     local SPEC_HEIGHT
@@ -833,8 +861,8 @@ main() {
         --fft-window "$FFT_WINDOW" \
         --dynamic-range 90
 
-    # Stage 4: Render frequency scale overlay
-    echo -e "  ${CYAN}[4/5]${RESET} Rendering frequency scale overlay..."
+    # Stage 4: Render overlays
+    echo -e "  ${CYAN}[4/6]${RESET} Rendering frequency scale overlay..."
     local freq_scale_png="${TMPDIR}/freq_scale.png"
     "$PYTHON" "${LIB_DIR}/render_freq_scale.py" \
         --output "$freq_scale_png" \
@@ -844,8 +872,22 @@ main() {
         --freq-max "$FREQ_MAX" \
         --font-size "$INFO_FONT_SIZE"
 
-    # Stage 5: Compose video
-    echo -e "  ${CYAN}[5/5]${RESET} Compositing video with ffmpeg..."
+    # Stage 5: Generate map zoom animation (if coordinates provided)
+    if [[ -n "${MAP_SIZE:-}" && "$MAP_SIZE" -gt 0 ]] 2>/dev/null; then
+        echo -e "  ${CYAN}[5/6]${RESET} Generating map zoom animation..."
+        MAP_FRAMES_DIR="${TMPDIR}/map_frames"
+        "$PYTHON" "${LIB_DIR}/render_map_animation.py" \
+            --output-dir "$MAP_FRAMES_DIR" \
+            --coordinates "$META_COORDINATES" \
+            --size "$MAP_SIZE" \
+            --duration "$effective_duration" \
+            --fps "$FPS"
+    else
+        echo -e "  ${CYAN}[5/6]${RESET} ${DIM}Map animation skipped (no coordinates)${RESET}"
+    fi
+
+    # Stage 6: Compose video
+    echo -e "  ${CYAN}[6/6]${RESET} Compositing video with ffmpeg..."
     # Timecode: pass datetime if enabled, empty string otherwise
     local tc_datetime=""
     if [[ "$SHOW_TIMECODE" == "y" || "$SHOW_TIMECODE" == "Y" || "$SHOW_TIMECODE" == "yes" ]]; then
@@ -875,6 +917,10 @@ main() {
         "$TIMECODE_Y" \
         "${SCROLL_VALUE_X:-}" \
         "${SCROLL_VALUE_W:-}" \
+        "${MAP_FRAMES_DIR:-}" \
+        "${MAP_X:-}" \
+        "${MAP_Y:-}" \
+        "${MAP_SIZE:-}" \
         ${SCROLL_FIELDS[@]+"${SCROLL_FIELDS[@]}"}
 
     echo ""

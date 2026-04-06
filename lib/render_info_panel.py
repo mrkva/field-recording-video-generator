@@ -35,7 +35,7 @@ def parse_datetime_from_filename(filename):
 def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
                       location="", playback_speed="", coordinates="",
-                      sample_info="", dynamic_time=False):
+                      sample_info="", dynamic_time=False, animated_map=False):
     """Render info panel — NASA/telemetry camera overlay aesthetic.
 
     All caps, monospace, tight layout with technical formatting.
@@ -149,32 +149,45 @@ def render_info_panel(output_png, width, font_size,
         y += line_height
 
     # Render map widget in top-right corner if coordinates provided
+    map_overlay_x = 0
+    map_overlay_y = 0
+    map_overlay_size = 0
     if coordinates:
-        from render_map_widget import render_map_widget, parse_coordinates
+        from render_map_widget import parse_coordinates
         coords = parse_coordinates(coordinates)
         if coords:
             map_size = max(total_h - 12, font_size * 5)
-            map_img = render_map_widget(coords[0], coords[1],
-                                        widget_size=map_size)
-            if map_img is not None:
-                map_x = width - map_size - 6
-                map_y = 6
-                # Ensure panel is tall enough
-                if map_size + 12 > total_h:
-                    new_h = map_size + 12
-                    new_img = Image.new('RGB', (width, new_h), color=bg_color)
-                    new_img.paste(img, (0, 0))
-                    img = new_img
-                    draw = ImageDraw.Draw(img)
-                    total_h = new_h
-                img.paste(map_img, (map_x, map_y))
+            map_x = width - map_size - 6
+            map_y = 6
+            # Ensure panel is tall enough
+            if map_size + 12 > total_h:
+                new_h = map_size + 12
+                new_img = Image.new('RGB', (width, new_h), color=bg_color)
+                new_img.paste(img, (0, 0))
+                img = new_img
+                draw = ImageDraw.Draw(img)
+                total_h = new_h
+
+            if animated_map:
+                # Leave map area dark for ffmpeg overlay animation
+                map_overlay_x = map_x
+                map_overlay_y = map_y
+                map_overlay_size = map_size
+            else:
+                from render_map_widget import render_map_widget
+                map_img = render_map_widget(coords[0], coords[1],
+                                            widget_size=map_size)
+                if map_img is not None:
+                    img.paste(map_img, (map_x, map_y))
 
     # Bottom separator — thin line
     draw.line([(0, total_h - 1), (width, total_h - 1)],
               fill=separator_color, width=1)
 
     img.save(output_png)
-    return total_h, timecode_x, timecode_y, scroll_fields, int(value_x), int(max_value_w)
+    return (total_h, timecode_x, timecode_y, scroll_fields,
+            int(value_x), int(max_value_w),
+            map_overlay_x, map_overlay_y, map_overlay_size)
 
 
 def main():
@@ -192,6 +205,8 @@ def main():
     parser.add_argument('--coordinates', default='')
     parser.add_argument('--dynamic-time', action='store_true',
                         help='Leave TIME value blank for drawtext overlay')
+    parser.add_argument('--animated-map', action='store_true',
+                        help='Reserve map space but leave blank for animated overlay')
 
     args = parser.parse_args()
 
@@ -203,7 +218,8 @@ def main():
         else:
             datetime_str = "UNKNOWN"
 
-    panel_height, tc_x, tc_y, scroll_fields, val_x, val_w = render_info_panel(
+    (panel_height, tc_x, tc_y, scroll_fields, val_x, val_w,
+     map_x, map_y, map_size) = render_info_panel(
         output_png=args.output,
         width=args.width,
         font_size=args.font_size,
@@ -216,12 +232,17 @@ def main():
         sample_info=args.sample_info,
         coordinates=args.coordinates,
         dynamic_time=args.dynamic_time,
+        animated_map=args.animated_map,
     )
 
     print(f"panel_height={panel_height}")
     if args.dynamic_time:
         print(f"timecode_x={tc_x}")
         print(f"timecode_y={tc_y}")
+    if args.animated_map and map_size > 0:
+        print(f"map_x={map_x}")
+        print(f"map_y={map_y}")
+        print(f"map_size={map_size}")
     for label, y_pos, text in scroll_fields:
         # Escape colons and backslashes for safe parsing
         safe_text = text.replace('\\', '\\\\').replace(':', '\\:')
