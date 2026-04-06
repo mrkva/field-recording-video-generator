@@ -253,7 +253,7 @@ interactive_dialogue() {
         PHOTO_PATH=""
     fi
 
-    FREQ_GRID=$(ask "Show frequency grid on spectrogram? (y/n)" "y")
+    FREQ_GRID=$(ask "Show frequency grid on spectrogram? (y/n)" "n")
     FFT_WINDOW=$(ask "FFT window size (e.g. 512, 1024, 2048, 4096, 8192)" "2048")
     NORMALIZE_AUDIO=$(ask "Normalize audio to -16 LUFS? (y/n)" "y")
 
@@ -310,48 +310,48 @@ prepare_audio() {
     fi
 
     if [[ "$normalize" == "y" || "$normalize" == "Y" || "$normalize" == "yes" ]]; then
-        # Two-pass loudnorm for accurate -16 LUFS targeting
+        # Measure integrated loudness, then apply a fixed gain offset.
+        # No dynamic compression — preserves original dynamics completely.
         local measure_output
         if [[ -n "$af_chain" ]]; then
             measure_output=$(ffmpeg -hide_banner -i "$input" \
-                -af "${af_chain},loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json" \
+                -af "${af_chain},loudnorm=I=-16:TP=-1.5:LRA=50:print_format=json" \
                 -f null - 2>&1)
         else
             measure_output=$(ffmpeg -hide_banner -i "$input" \
-                -af "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json" \
+                -af "loudnorm=I=-16:TP=-1.5:LRA=50:print_format=json" \
                 -f null - 2>&1)
         fi
 
-        # Extract measured values from JSON in ffmpeg output
-        local measured_values
-        measured_values=$("$PYTHON" -c "
+        local gain_db
+        gain_db=$("$PYTHON" -c "
 import sys, json, re
 text = sys.stdin.read()
-# Find the JSON block in ffmpeg output
 m = re.search(r'\{[^{}]+\}', text, re.DOTALL)
 if m:
     d = json.loads(m.group())
-    print(d['input_i'])
-    print(d['input_tp'])
-    print(d['input_lra'])
-    print(d['input_thresh'])
+    measured_i = float(d['input_i'])
+    measured_tp = float(d['input_tp'])
+    target_i = -16.0
+    target_tp = -1.5
+    # Gain needed for target loudness
+    gain = target_i - measured_i
+    # Clamp so true peak doesn't exceed limit
+    headroom = target_tp - measured_tp
+    if gain > headroom:
+        gain = headroom
+    print(f'{gain:.2f}')
 else:
-    print('ERROR: Could not parse loudnorm output', file=sys.stderr)
-    sys.exit(1)
+    print('0.00', file=sys.stderr)
+    print('0.00')
 " <<< "$measure_output")
 
-        local measured_i measured_tp measured_lra measured_thresh
-        measured_i=$(echo "$measured_values" | sed -n '1p')
-        measured_tp=$(echo "$measured_values" | sed -n '2p')
-        measured_lra=$(echo "$measured_values" | sed -n '3p')
-        measured_thresh=$(echo "$measured_values" | sed -n '4p')
-
-        local norm_filter="loudnorm=I=-16:TP=-1.5:LRA=11:measured_I=${measured_i}:measured_TP=${measured_tp}:measured_LRA=${measured_lra}:measured_thresh=${measured_thresh}:linear=true"
+        local volume_filter="volume=${gain_db}dB"
 
         if [[ -n "$af_chain" ]]; then
-            af_chain="${af_chain},${norm_filter}"
+            af_chain="${af_chain},${volume_filter}"
         else
-            af_chain="${norm_filter}"
+            af_chain="${volume_filter}"
         fi
     fi
 
@@ -519,14 +519,14 @@ quick_defaults() {
     META_DATETIME="${detected_datetime:-$(date +%Y-%m-%dT%H:%M:%S)}"
     META_SUBJECT="Test recording"
     META_RECORDER="Unknown"
-    META_LOCATION=""
-    META_COORDINATES=""
+    META_LOCATION="Ashdown Forest, UK"
+    META_COORDINATES="51.07, 0.03"
     FREQ_MIN="20"
     FREQ_MAX="$nyquist"
     PLAYBACK_SPEED_INPUT="1x"
     PRESET="reel"
     PHOTO_PATH=""
-    FREQ_GRID="y"
+    FREQ_GRID="n"
     FFT_WINDOW="2048"
     NORMALIZE_AUDIO="y"
     OUTPUT_FILE="${input_file%.*}_video.mp4"

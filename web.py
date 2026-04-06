@@ -229,22 +229,22 @@ def run_pipeline(job_id, input_path, params):
 
         normalize = params.get("normalize", "y")
         if normalize in ("y", "Y", "yes"):
-            # Two-pass loudnorm
+            # Measure loudness, apply fixed gain — no dynamic compression
             measure_cmd = ["ffmpeg", "-hide_banner", "-i", input_path]
             base_filter = f"{af_chain}," if af_chain else ""
-            measure_cmd += ["-af", f"{base_filter}loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json",
+            measure_cmd += ["-af", f"{base_filter}loudnorm=I=-16:TP=-1.5:LRA=50:print_format=json",
                            "-f", "null", "-"]
             result = subprocess.run(measure_cmd, capture_output=True, text=True)
             m = re.search(r'\{[^{}]+\}', result.stderr, re.DOTALL)
             if m:
                 d = json.loads(m.group())
-                norm_filter = (
-                    f"loudnorm=I=-16:TP=-1.5:LRA=11:"
-                    f"measured_I={d['input_i']}:measured_TP={d['input_tp']}:"
-                    f"measured_LRA={d['input_lra']}:measured_thresh={d['input_thresh']}:"
-                    f"linear=true"
-                )
-                af_chain = f"{af_chain},{norm_filter}" if af_chain else norm_filter
+                measured_i = float(d['input_i'])
+                measured_tp = float(d['input_tp'])
+                gain = -16.0 - measured_i
+                headroom = -1.5 - measured_tp
+                if gain > headroom:
+                    gain = headroom
+                af_chain = f"{af_chain},volume={gain:.2f}dB" if af_chain else f"volume={gain:.2f}dB"
 
         encode_cmd = ["ffmpeg", "-y", "-v", "warning", "-i", input_path]
         if af_chain:
