@@ -73,12 +73,37 @@ EOF
 }
 
 # ============================================================================
-# Parse datetime from filename
+# Parse datetime from BWF metadata, filename, or file timestamps
 # ============================================================================
 parse_datetime() {
     "$PYTHON" -c "
-import re, os, sys, datetime
+import re, os, sys, datetime, subprocess, json
 filepath = sys.argv[1]
+
+# Priority 1: BWF embedded metadata (origination_date + origination_time)
+try:
+    result = subprocess.run(
+        ['ffprobe', '-v', 'error', '-show_entries', 'format_tags',
+         '-of', 'json', filepath],
+        capture_output=True, text=True
+    )
+    tags = json.loads(result.stdout).get('format', {}).get('tags', {})
+    orig_date = tags.get('origination_date', '') or tags.get('date', '')
+    orig_time = tags.get('origination_time', '')
+    if orig_date and len(orig_date) >= 10:
+        # origination_date: '2026-04-04' or '2026:04:04'
+        orig_date = orig_date[:10].replace(':', '-')
+        if orig_time and len(orig_time) >= 8:
+            print(f'{orig_date}T{orig_time[:8]}')
+        elif orig_time and len(orig_time) >= 5:
+            print(f'{orig_date}T{orig_time[:5]}:00')
+        else:
+            print(f'{orig_date}T00:00:00')
+        sys.exit(0)
+except Exception:
+    pass
+
+# Priority 2: Filename patterns
 basename = os.path.splitext(os.path.basename(filepath))[0]
 # ISO format with separators: 2026-03-08T07_47_03 or 2026-03-08T07-47-03
 m = re.search(r'(\d{4})-(\d{2})-(\d{2})[T_\- ](\d{2})[_\-:](\d{2})[_\-:](\d{2})', basename)
