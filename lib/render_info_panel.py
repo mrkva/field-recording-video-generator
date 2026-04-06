@@ -36,7 +36,7 @@ def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
                       location="", playback_speed="", coordinates="",
                       sample_info="", dynamic_time=False, animated_map=False,
-                      max_value_chars=32, video_duration=0):
+                      max_value_chars=32):
     """Render info panel — NASA/telemetry camera overlay aesthetic.
 
     All caps, monospace, tight layout with technical formatting.
@@ -149,28 +149,10 @@ def render_info_panel(output_png, width, font_size,
             y_correction = max(1, font_size // 12)
             timecode_y = int(y) + y_correction
         elif needs_scroll:
-            # Generate frame PNGs for character-by-character scrolling
-            # Looping text with bullet delimiter
-            looping_text = text + " \u2022 " + text
-            total_positions = len(text) + 3  # text + " • "
-            visible_w = int(char_w * max_value_chars)
-            num_seconds = max(1, int(video_duration) + 1) if video_duration > 0 else 120
-
-            scroll_dir = os.path.join(os.path.dirname(output_png),
-                                      f"scroll_frames_{len(scroll_fields)}")
-            os.makedirs(scroll_dir, exist_ok=True)
-
-            for sec in range(num_seconds):
-                offset = sec % total_positions
-                window = looping_text[offset:offset + max_value_chars]
-                if len(window) < max_value_chars:
-                    window += looping_text[:max_value_chars - len(window)]
-                frame = Image.new('RGB', (visible_w, line_height), color=bg_color)
-                fdraw = ImageDraw.Draw(frame)
-                fdraw.text((0, 0), window, fill=value_color, font=font)
-                frame.save(os.path.join(scroll_dir, f"frame_{sec:06d}.png"))
-
-            scroll_fields.append((label, int(y), text, scroll_dir, visible_w))
+            # Record scroll field for drawtext animation in ffmpeg
+            # Apply same y correction as timecode for consistent alignment
+            y_correction = max(1, font_size // 12)
+            scroll_fields.append((label, int(y) + y_correction, text))
         else:
             draw.text((value_x, y), text, fill=value_color, font=font)
         y += line_height
@@ -213,7 +195,7 @@ def render_info_panel(output_png, width, font_size,
 
     img.save(output_png)
     return (total_h, timecode_x, timecode_y, scroll_fields,
-            int(value_x), int(char_w), max_value_chars,
+            int(value_x), max_value_chars,
             map_overlay_x, map_overlay_y, map_overlay_size)
 
 
@@ -234,9 +216,6 @@ def main():
                         help='Leave TIME value blank for drawtext overlay')
     parser.add_argument('--animated-map', action='store_true',
                         help='Reserve map space but leave blank for animated overlay')
-    parser.add_argument('--video-duration', type=float, default=0,
-                        help='Video duration in seconds (for scroll frame generation)')
-
     args = parser.parse_args()
 
     datetime_str = args.datetime
@@ -247,7 +226,7 @@ def main():
         else:
             datetime_str = "UNKNOWN"
 
-    (panel_height, tc_x, tc_y, scroll_fields, val_x, char_w, max_chars,
+    (panel_height, tc_x, tc_y, scroll_fields, val_x, max_chars,
      map_x, map_y, map_size) = render_info_panel(
         output_png=args.output,
         width=args.width,
@@ -262,7 +241,6 @@ def main():
         coordinates=args.coordinates,
         dynamic_time=args.dynamic_time,
         animated_map=args.animated_map,
-        video_duration=args.video_duration,
     )
 
     print(f"panel_height={panel_height}")
@@ -273,10 +251,13 @@ def main():
         print(f"map_x={map_x}")
         print(f"map_y={map_y}")
         print(f"map_size={map_size}")
-    for label, y_pos, text, scroll_dir, vis_w in scroll_fields:
-        print(f"scroll_field={y_pos}:{scroll_dir}:{vis_w}")
+    for label, y_pos, text in scroll_fields:
+        # Escape colons and backslashes for safe parsing
+        safe_text = text.replace('\\', '\\\\').replace(':', '\\:')
+        print(f"scroll_field={y_pos}:{safe_text}")
     if scroll_fields:
         print(f"scroll_value_x={val_x}")
+        print(f"scroll_max_chars={max_chars}")
 
 
 if __name__ == '__main__':

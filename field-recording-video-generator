@@ -531,12 +531,13 @@ build_ffmpeg_command() {
 
     # Extra parameters (21+)
     local scroll_value_x="${21:-}"
-    local map_frames_dir="${22:-}"
-    local map_x="${23:-}"
-    local map_y="${24:-}"
-    local map_size="${25:-}"
+    local scroll_max_chars="${22:-32}"
+    local map_frames_dir="${23:-}"
+    local map_x="${24:-}"
+    local map_y="${25:-}"
+    local map_size="${26:-}"
     local -a scroll_fields_arr=()
-    shift 25 2>/dev/null || true
+    shift 26 2>/dev/null || true
     while [[ $# -gt 0 ]]; do
         scroll_fields_arr+=("$1")
         shift
@@ -563,29 +564,6 @@ build_ffmpeg_command() {
         inputs+=(-framerate "$fps" -i "${map_frames_dir}/map_%06d.png")
         map_anim_idx="$next_idx"
         next_idx=$((next_idx + 1))
-    fi
-
-    # Add scroll frame sequences as inputs
-    local -a scroll_input_indices=()
-    local -a scroll_y_positions=()
-    local -a scroll_vis_widths=()
-    if [[ ${#scroll_fields_arr[@]} -gt 0 ]]; then
-        for sf in "${scroll_fields_arr[@]}"; do
-            # Format: scroll_field=Y_POS:FRAMES_DIR:VIS_W
-            local sf_data="${sf#scroll_field=}"
-            local sf_y="${sf_data%%:*}"
-            local sf_rest="${sf_data#*:}"
-            local sf_dir="${sf_rest%%:*}"
-            local sf_vis_w="${sf_rest##*:}"
-            if [[ -d "$sf_dir" ]]; then
-                # 1fps image sequence — ffmpeg holds each frame for 1 second
-                inputs+=(-framerate 1 -i "${sf_dir}/frame_%06d.png")
-                scroll_input_indices+=("$next_idx")
-                scroll_y_positions+=("$sf_y")
-                scroll_vis_widths+=("$sf_vis_w")
-                next_idx=$((next_idx + 1))
-            fi
-        done
     fi
 
     # Build filter: crop spectrogram, overlay cursor, overlay freq scale, stack with info panel
@@ -622,17 +600,75 @@ build_ffmpeg_command() {
     local dt_in="$combined_label"
     local dt_idx=0
 
-    # Scroll frame overlay (character-by-character ticker, 1 char/sec)
-    if [[ ${#scroll_input_indices[@]} -gt 0 ]]; then
-        for si in "${!scroll_input_indices[@]}"; do
-            local s_idx="${scroll_input_indices[$si]}"
-            local s_y="${scroll_y_positions[$si]}"
-            local dt_out="scroll_${dt_idx}"
+    # Scrolling text via chained drawtext filters (1 char/sec, like timecode)
+    if [[ ${#scroll_fields_arr[@]} -gt 0 ]]; then
+        for sf in "${scroll_fields_arr[@]}"; do
+            # Format: scroll_field=Y_POS:ESCAPED_TEXT
+            local sf_data="${sf#scroll_field=}"
+            local sf_y="${sf_data%%:*}"
+            local sf_text="${sf_data#*:}"
+            # Unescape from Python output
+            sf_text="${sf_text//\\\\:/\:}"
+            sf_text="${sf_text//\\\\\\\\/\\\\}"
 
-            filter_complex+="[${dt_in}][${s_idx}:v]overlay=x=${scroll_value_x}:y=${s_y}:shortest=1[${dt_out}];"
+            # Generate chained drawtext filters via Python
+            # One filter per unique scroll position (one text cycle), using
+            # modular enable so it loops for the full video duration
+            local scroll_filters
+            scroll_filters=$("$PYTHON" -c "
+import sys
+text = sys.argv[1]
+max_chars = int(sys.argv[2])
+y = sys.argv[4]
+x = sys.argv[5]
+font = sys.argv[6]
+font_size = sys.argv[7]
+dt_in = sys.argv[8]
+dt_idx = int(sys.argv[9])
 
-            dt_in="$dt_out"
-            dt_idx=$((dt_idx + 1))
+# Build looping text with bullet delimiter
+loop_text = text + ' \u2022 ' + text
+cycle_len = len(text) + 3  # text + ' \u2022 '
+
+filters = ''
+for pos in range(cycle_len):
+    window = loop_text[pos:pos + max_chars]
+    if len(window) < max_chars:
+        window += loop_text[:max_chars - len(window)]
+
+    # Escape for ffmpeg drawtext
+    window = window.replace('\\\\', '\\\\\\\\')
+    window = window.replace(\"'\", \"'\\\\\\\\''\")
+    window = window.replace(':', '\\\\:')
+
+    dt_out = f'stxt_{dt_idx}_{pos}'
+    # Enable when floor(t) mod cycle_len == pos
+    # Commas escaped for ffmpeg filter_complex parser
+    enable = f\"enable='eq(mod(floor(t)\\,{cycle_len})\\,{pos})'\"
+
+    filters += f'[{dt_in}]drawtext='
+    filters += f'fontfile={font}:'
+    filters += f'fontsize={font_size}:'
+    filters += f'fontcolor=0xE6E6E6:'
+    filters += f'x={x}:y={y}:'
+    filters += f\"text='{window}':\"
+    filters += f'{enable}'
+    filters += f'[{dt_out}];'
+
+    dt_in = dt_out
+
+print(filters)
+print(f'LAST_LABEL={dt_in}')
+print(f'LAST_IDX={dt_idx}')
+" "$sf_text" "$scroll_max_chars" "$duration" "$sf_y" "$scroll_value_x" "$dt_font" "$font_size" "$dt_in" "$dt_idx")
+
+            # Extract the filter text and updated label/index
+            local filters_text
+            filters_text=$(echo "$scroll_filters" | head -1)
+            dt_in=$(echo "$scroll_filters" | grep "^LAST_LABEL=" | cut -d= -f2)
+            dt_idx=$(echo "$scroll_filters" | grep "^LAST_IDX=" | cut -d= -f2)
+
+            filter_complex+="$filters_text"
         done
     fi
 
@@ -715,7 +751,7 @@ quick_defaults() {
     local nyquist=$((AUDIO_SAMPLE_RATE / 2))
 
     META_DATETIME="${detected_datetime:-$(date +%Y-%m-%dT%H:%M:%S)}"
-    META_SUBJECT="Test recording"
+    META_SUBJECT="Windy forest in the night and footsteps with birds in the background"
     META_RECORDER="${AUDIO_ENCODED_BY:-Unknown}"
     META_LOCATION="Ashdown Forest, UK"
     META_COORDINATES="51.07, 0.03"
@@ -821,7 +857,6 @@ main() {
         --playback-speed "$PLAYBACK_LABEL" \
         --sample-info "${AUDIO_SAMPLE_RATE}HZ ${AUDIO_BIT_DEPTH}BIT${AUDIO_FORMAT:+ $AUDIO_FORMAT}" \
         --coordinates "$META_COORDINATES" \
-        --video-duration "$effective_duration" \
         $dynamic_time_flag $animated_map_flag)
 
     # Extract auto-calculated panel height and timecode position
@@ -830,12 +865,13 @@ main() {
     TIMECODE_X=$(echo "$panel_output" | grep "timecode_x=" | cut -d= -f2 || true)
     TIMECODE_Y=$(echo "$panel_output" | grep "timecode_y=" | cut -d= -f2 || true)
 
-    # Extract scroll fields (for long text that needs frame animation)
+    # Extract scroll fields (for drawtext ticker animation)
     SCROLL_FIELDS=()
     while IFS= read -r line; do
         SCROLL_FIELDS+=("$line")
     done < <(echo "$panel_output" | grep "^scroll_field=" || true)
     SCROLL_VALUE_X=$(echo "$panel_output" | grep "scroll_value_x=" | cut -d= -f2 || true)
+    SCROLL_MAX_CHARS=$(echo "$panel_output" | grep "scroll_max_chars=" | cut -d= -f2 || true)
 
     # Extract map overlay position (for animated map)
     local MAP_X MAP_Y MAP_SIZE MAP_FRAMES_DIR=""
@@ -930,6 +966,7 @@ main() {
         "$TIMECODE_X" \
         "$TIMECODE_Y" \
         "${SCROLL_VALUE_X:-}" \
+        "${SCROLL_MAX_CHARS:-}" \
         "${MAP_FRAMES_DIR:-}" \
         "${MAP_X:-}" \
         "${MAP_Y:-}" \
