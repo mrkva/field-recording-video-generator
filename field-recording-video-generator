@@ -539,7 +539,7 @@ print(0)
         filter_complex+="[combined]format=yuv420p[outv]"
     fi
 
-    ffmpeg -y -v warning \
+    ffmpeg -y -v warning -stats_period 0.5 -progress pipe:1 \
         "${inputs[@]}" \
         -filter_complex "$filter_complex" \
         -map "[outv]" -map 2:a \
@@ -549,7 +549,28 @@ print(0)
         -t "$duration" \
         -movflags +faststart \
         -shortest \
-        "$output"
+        "$output" | "$PYTHON" -c "
+import sys
+
+duration = float('${duration}')
+bar_width = 40
+
+for line in sys.stdin:
+    line = line.strip()
+    if line.startswith('out_time_ms='):
+        try:
+            us = int(line.split('=')[1])
+            secs = us / 1_000_000.0
+            pct = min(secs / duration, 1.0) if duration > 0 else 0
+            filled = int(bar_width * pct)
+            bar = '█' * filled + '░' * (bar_width - filled)
+            elapsed = f'{secs:.1f}s / {duration:.1f}s'
+            print(f'\r        {bar} {pct*100:5.1f}%  {elapsed}', end='', flush=True, file=sys.stderr)
+        except (ValueError, ZeroDivisionError):
+            pass
+    elif line == 'progress=end':
+        print(f'\r        {\"█\" * bar_width} 100.0%  Done!{\" \" * 20}', file=sys.stderr)
+"
 }
 
 # ============================================================================
