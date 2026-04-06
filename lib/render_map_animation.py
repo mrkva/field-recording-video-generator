@@ -63,7 +63,7 @@ def draw_zoom_hud(draw, widget_size, zoom, font):
     draw.text((6, 4), zoom_text, fill=(180, 180, 180), font=font)
 
     # Scanning indicator top-right (blinking effect handled by frame timing)
-    scan_text = "LOCK" if zoom >= 12 else "SCAN"
+    scan_text = "LOCK" if zoom >= 11 else "SCAN"
     bbox = font.getbbox(scan_text)
     tw = bbox[2] - bbox[0]
     draw.text((widget_size - tw - 6, 4), scan_text, fill=(180, 180, 180), font=font)
@@ -127,7 +127,7 @@ def render_map_frame(lat, lon, zoom, widget_size, font):
 
 
 def render_map_animation(output_dir, lat, lon, widget_size, duration, fps,
-                         zoom_start=3, zoom_end=14):
+                         zoom_start=3, zoom_end=13):
     """Render map zoom animation frames.
 
     Generates one frame per video frame with zoom interpolated from
@@ -182,7 +182,7 @@ def main():
     parser.add_argument('--duration', type=float, required=True, help='Video duration in seconds')
     parser.add_argument('--fps', type=int, required=True, help='Video frame rate')
     parser.add_argument('--zoom-start', type=int, default=3, help='Starting zoom level')
-    parser.add_argument('--zoom-end', type=int, default=14, help='Ending zoom level')
+    parser.add_argument('--zoom-end', type=int, default=13, help='Ending zoom level')
     args = parser.parse_args()
 
     coords = parse_coordinates(args.coordinates)

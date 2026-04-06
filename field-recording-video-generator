@@ -269,9 +269,11 @@ interactive_dialogue() {
     # Date/time auto-detection
     local detected_datetime
     detected_datetime=$(parse_datetime "$input_file")
+    local has_timecode="n"
     if [[ -n "$detected_datetime" ]]; then
         msg "${GREEN}Detected date/time: ${detected_datetime}${RESET}"
-        META_DATETIME=$(ask "Date/time" "$detected_datetime")
+        META_DATETIME="$detected_datetime"
+        has_timecode="y"
     else
         msg "${YELLOW}Could not detect date/time.${RESET}"
         META_DATETIME=$(ask "Date/time (ISO format, e.g. 2024-03-15T14:30:22)" "")
@@ -314,7 +316,12 @@ interactive_dialogue() {
     FREQ_GRID=$(ask "Show frequency grid on spectrogram? (y/n)" "n")
     FFT_WINDOW=$(ask "FFT window size (e.g. 512, 1024, 2048, 4096, 8192)" "2048")
     NORMALIZE_AUDIO=$(ask "Normalize audio to -16 LUFS? (y/n)" "y")
-    SHOW_TIMECODE=$(ask "Show running timecode? (y/n)" "y")
+    if [[ "$has_timecode" == "y" ]]; then
+        SHOW_TIMECODE="y"
+        msg "${DIM}Running timecode: enabled (BWF timecode detected)${RESET}"
+    else
+        SHOW_TIMECODE=$(ask "Show running timecode? (y/n)" "n")
+    fi
 
     # Output filename
     local default_output="${input_file%.*}_video.mp4"
@@ -524,13 +531,14 @@ build_ffmpeg_command() {
 
     # Extra parameters (21+)
     local scroll_value_x="${21:-}"
-    local scroll_value_w="${22:-}"
-    local map_frames_dir="${23:-}"
-    local map_x="${24:-}"
-    local map_y="${25:-}"
-    local map_size="${26:-}"
+    local scroll_char_w="${22:-}"
+    local scroll_max_chars="${23:-}"
+    local map_frames_dir="${24:-}"
+    local map_x="${25:-}"
+    local map_y="${26:-}"
+    local map_size="${27:-}"
     local -a scroll_fields_arr=()
-    shift 26 2>/dev/null || true
+    shift 27 2>/dev/null || true
     while [[ $# -gt 0 ]]; do
         scroll_fields_arr+=("$1")
         shift
@@ -557,6 +565,23 @@ build_ffmpeg_command() {
         inputs+=(-framerate "$fps" -i "${map_frames_dir}/map_%06d.png")
         map_anim_idx="$next_idx"
         next_idx=$((next_idx + 1))
+    fi
+
+    # Add scroll strip PNGs as inputs
+    local -a scroll_input_indices=()
+    local -a scroll_y_positions=()
+    if [[ ${#scroll_fields_arr[@]} -gt 0 ]]; then
+        for sf in "${scroll_fields_arr[@]}"; do
+            local sf_data="${sf#scroll_field=}"
+            local sf_y="${sf_data%%:*}"
+            local sf_strip="${sf_data#*:}"
+            if [[ -f "$sf_strip" ]]; then
+                inputs+=(-loop 1 -i "$sf_strip")
+                scroll_input_indices+=("$next_idx")
+                scroll_y_positions+=("$sf_y")
+                next_idx=$((next_idx + 1))
+            fi
+        done
     fi
 
     # Build filter: crop spectrogram, overlay cursor, overlay freq scale, stack with info panel
@@ -593,29 +618,24 @@ build_ffmpeg_command() {
     local dt_in="$combined_label"
     local dt_idx=0
 
-    if [[ ${#scroll_fields_arr[@]} -gt 0 ]]; then
-        for sf in "${scroll_fields_arr[@]}"; do
-            # Format: scroll_field=Y_POS:ESCAPED_TEXT
-            # Text is already escaped for ffmpeg drawtext (colons as \: and backslashes as \\)
-            local sf_data="${sf#scroll_field=}"
-            local sf_y="${sf_data%%:*}"
-            local sf_text="${sf_data#*:}"
-            # Escape single quotes for drawtext text='...' wrapper
-            sf_text="${sf_text//\'/\'\\\\\'\'}"
+    # Scroll strip crop+overlay (character-by-character ticker)
+    if [[ ${#scroll_input_indices[@]} -gt 0 && -n "$scroll_char_w" ]]; then
+        local scroll_chars_per_sec=3  # advance 3 characters per second
+        local visible_w
+        visible_w=$("$PYTHON" -c "print(int(${scroll_char_w} * ${scroll_max_chars}))")
 
-            local scroll_speed=60  # pixels per second
+        for si in "${!scroll_input_indices[@]}"; do
+            local s_idx="${scroll_input_indices[$si]}"
+            local s_y="${scroll_y_positions[$si]}"
             local dt_out="scroll_${dt_idx}"
 
-            # Scroll: text starts at right edge of value area and scrolls left
-            # When text scrolls fully off, it reappears from the right
-            filter_complex+="[${dt_in}]drawtext="
-            filter_complex+="fontfile=${dt_font}:"
-            filter_complex+="fontsize=${font_size}:"
-            filter_complex+="fontcolor=0xE6E6E6:"
-            filter_complex+="y=${sf_y}:"
-            filter_complex+="x='${scroll_value_x} + ${scroll_value_w} - mod(t*${scroll_speed}\\,tw+${scroll_value_w})':"
-            filter_complex+="text='${sf_text}'"
-            filter_complex+="[${dt_out}];"
+            # Crop a window of max_value_chars width, advancing by char_w per step
+            # floor(t * chars_per_sec) * char_w gives character-aligned scrolling
+            # mod wraps around so the text loops continuously
+            local strip_max_x="(iw-${visible_w})"
+            local crop_expr="mod(floor(t*${scroll_chars_per_sec})*${scroll_char_w}\\,${strip_max_x}+1)"
+            filter_complex+="[${s_idx}:v]crop=w=${visible_w}:h=ih:x='${crop_expr}':y=0[scrop_${dt_idx}];"
+            filter_complex+="[${dt_in}][scrop_${dt_idx}]overlay=x=${scroll_value_x}:y=${s_y}:shortest=1[${dt_out}];"
 
             dt_in="$dt_out"
             dt_idx=$((dt_idx + 1))
@@ -815,13 +835,14 @@ main() {
     TIMECODE_X=$(echo "$panel_output" | grep "timecode_x=" | cut -d= -f2 || true)
     TIMECODE_Y=$(echo "$panel_output" | grep "timecode_y=" | cut -d= -f2 || true)
 
-    # Extract scroll fields (for long text that needs ticker animation)
+    # Extract scroll fields (for long text that needs crop animation)
     SCROLL_FIELDS=()
     while IFS= read -r line; do
         SCROLL_FIELDS+=("$line")
     done < <(echo "$panel_output" | grep "^scroll_field=" || true)
     SCROLL_VALUE_X=$(echo "$panel_output" | grep "scroll_value_x=" | cut -d= -f2 || true)
-    SCROLL_VALUE_W=$(echo "$panel_output" | grep "scroll_value_w=" | cut -d= -f2 || true)
+    SCROLL_CHAR_W=$(echo "$panel_output" | grep "scroll_char_w=" | cut -d= -f2 || true)
+    SCROLL_MAX_CHARS=$(echo "$panel_output" | grep "scroll_max_chars=" | cut -d= -f2 || true)
 
     # Extract map overlay position (for animated map)
     local MAP_X MAP_Y MAP_SIZE MAP_FRAMES_DIR=""
@@ -916,7 +937,8 @@ main() {
         "$TIMECODE_X" \
         "$TIMECODE_Y" \
         "${SCROLL_VALUE_X:-}" \
-        "${SCROLL_VALUE_W:-}" \
+        "${SCROLL_CHAR_W:-}" \
+        "${SCROLL_MAX_CHARS:-}" \
         "${MAP_FRAMES_DIR:-}" \
         "${MAP_X:-}" \
         "${MAP_Y:-}" \

@@ -35,7 +35,8 @@ def parse_datetime_from_filename(filename):
 def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
                       location="", playback_speed="", coordinates="",
-                      sample_info="", dynamic_time=False, animated_map=False):
+                      sample_info="", dynamic_time=False, animated_map=False,
+                      max_value_chars=32):
     """Render info panel — NASA/telemetry camera overlay aesthetic.
 
     All caps, monospace, tight layout with technical formatting.
@@ -112,12 +113,14 @@ def render_info_panel(output_png, width, font_size,
 
     max_value_w = width - value_x - padding_x - map_reserve_w
 
+    # Character width for monospace font
+    char_w = font.getlength("X")
+
     # Check which values overflow and need scrolling
-    scroll_fields = []  # list of (label, y_pos, full_text) — filled during rendering
+    scroll_fields = []  # list of (label, y_pos, full_text, strip_png) — filled during rendering
     all_lines = []  # list of (label, value_text, needs_scroll)
     for label, value in entries:
-        text_w = font.getlength(value)
-        if text_w > max_value_w:
+        if len(value) > max_value_chars:
             all_lines.append((label, value, True))
         else:
             all_lines.append((label, value, False))
@@ -140,10 +143,24 @@ def render_info_panel(output_png, width, font_size,
         # If dynamic_time, skip rendering the TIME value (drawtext will handle it)
         if dynamic_time and label == "TIME":
             timecode_x = int(value_x)
-            timecode_y = int(y)
+            # Compensate for ffmpeg drawtext vs Pillow vertical alignment difference
+            # Pillow draw.text includes font ascent offset; ffmpeg drawtext uses y as
+            # the top of the text bounding box which sits slightly lower
+            y_correction = max(1, font_size // 12)
+            timecode_y = int(y) + y_correction
         elif needs_scroll:
-            # Don't render — ffmpeg drawtext will scroll it
-            scroll_fields.append((label, int(y), text))
+            # Render full text as a wide PNG strip for ffmpeg crop animation
+            # Add padding of max_value_chars spaces so text scrolls off cleanly
+            padded_text = text + " " * max_value_chars
+            strip_w = int(char_w * len(padded_text)) + 4
+            strip_h = line_height + 4
+            strip_img = Image.new('RGB', (strip_w, strip_h), color=bg_color)
+            strip_draw = ImageDraw.Draw(strip_img)
+            strip_draw.text((0, 0), padded_text, fill=value_color, font=font)
+            strip_dir = os.path.dirname(output_png)
+            strip_path = os.path.join(strip_dir, f"scroll_strip_{len(scroll_fields)}.png")
+            strip_img.save(strip_path)
+            scroll_fields.append((label, int(y), text, strip_path))
         else:
             draw.text((value_x, y), text, fill=value_color, font=font)
         y += line_height
@@ -186,7 +203,7 @@ def render_info_panel(output_png, width, font_size,
 
     img.save(output_png)
     return (total_h, timecode_x, timecode_y, scroll_fields,
-            int(value_x), int(max_value_w),
+            int(value_x), int(char_w), max_value_chars,
             map_overlay_x, map_overlay_y, map_overlay_size)
 
 
@@ -218,7 +235,7 @@ def main():
         else:
             datetime_str = "UNKNOWN"
 
-    (panel_height, tc_x, tc_y, scroll_fields, val_x, val_w,
+    (panel_height, tc_x, tc_y, scroll_fields, val_x, char_w, max_chars,
      map_x, map_y, map_size) = render_info_panel(
         output_png=args.output,
         width=args.width,
@@ -243,13 +260,12 @@ def main():
         print(f"map_x={map_x}")
         print(f"map_y={map_y}")
         print(f"map_size={map_size}")
-    for label, y_pos, text in scroll_fields:
-        # Escape colons and backslashes for safe parsing
-        safe_text = text.replace('\\', '\\\\').replace(':', '\\:')
-        print(f"scroll_field={y_pos}:{safe_text}")
+    for label, y_pos, text, strip_path in scroll_fields:
+        print(f"scroll_field={y_pos}:{strip_path}")
     if scroll_fields:
         print(f"scroll_value_x={val_x}")
-        print(f"scroll_value_w={val_w}")
+        print(f"scroll_char_w={char_w}")
+        print(f"scroll_max_chars={max_chars}")
 
 
 if __name__ == '__main__':
