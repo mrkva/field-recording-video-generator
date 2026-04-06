@@ -556,6 +556,54 @@ build_ffmpeg_command() {
         filter_complex+="[info][spec_final]vstack[combined];"
     fi
 
+    # Chain of drawtext filters on [combined]
+    local dt_font="${LIB_DIR}/VCR_OSD_MONO.ttf"
+    if [[ ! -f "$dt_font" ]]; then
+        dt_font="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+    fi
+
+    local dt_in="combined"
+    local dt_idx=0
+
+    # Scrolling text fields (ticker animation for long values)
+    local scroll_value_x="${21:-}"
+    local scroll_value_w="${22:-}"
+    local -a scroll_fields_arr=()
+    shift 22 2>/dev/null || true
+    while [[ $# -gt 0 ]]; do
+        scroll_fields_arr+=("$1")
+        shift
+    done
+
+    if [[ ${#scroll_fields_arr[@]} -gt 0 ]]; then
+        for sf in "${scroll_fields_arr[@]}"; do
+            # Format: scroll_field=Y_POS:ESCAPED_TEXT
+            # Text is already escaped for ffmpeg drawtext (colons as \: and backslashes as \\)
+            local sf_data="${sf#scroll_field=}"
+            local sf_y="${sf_data%%:*}"
+            local sf_text="${sf_data#*:}"
+            # Escape single quotes for drawtext text='...' wrapper
+            sf_text="${sf_text//\'/\'\\\\\'\'}"
+
+            local scroll_speed=60  # pixels per second
+            local dt_out="scroll_${dt_idx}"
+
+            # Scroll: text starts at right edge of value area and scrolls left
+            # When text scrolls fully off, it reappears from the right
+            filter_complex+="[${dt_in}]drawtext="
+            filter_complex+="fontfile=${dt_font}:"
+            filter_complex+="fontsize=${font_size}:"
+            filter_complex+="fontcolor=rgb(230\\,230\\,230):"
+            filter_complex+="y=${sf_y}:"
+            filter_complex+="x='${scroll_value_x} + ${scroll_value_w} - mod(t*${scroll_speed}\\,tw+${scroll_value_w})':"
+            filter_complex+="text='${sf_text}'"
+            filter_complex+="[${dt_out}];"
+
+            dt_in="$dt_out"
+            dt_idx=$((dt_idx + 1))
+        done
+    fi
+
     # Dynamic timecode in info panel via drawtext
     if [[ -n "$timecode_datetime" && -n "$timecode_x" && "$timecode_x" != "0" ]]; then
         local tc_epoch
@@ -573,28 +621,21 @@ print(0)
 ")
 
         if [[ "$tc_epoch" != "0" ]]; then
-            local tc_font="${LIB_DIR}/VCR_OSD_MONO.ttf"
-            if [[ ! -f "$tc_font" ]]; then
-                tc_font="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
-            fi
-
-            # setpts trick: scale PTS so drawtext sees original recording time,
-            # then restore for correct video timing
-            filter_complex+="[combined]setpts=PTS/${speed_factor}[tc_scaled];"
+            filter_complex+="[${dt_in}]setpts=PTS/${speed_factor}[tc_scaled];"
             filter_complex+="[tc_scaled]drawtext="
-            filter_complex+="fontfile=${tc_font}:"
+            filter_complex+="fontfile=${dt_font}:"
             filter_complex+="fontsize=${font_size}:"
             filter_complex+="fontcolor=rgb(230\\,230\\,230):"
             filter_complex+="x=${timecode_x}:y=${timecode_y}:"
             filter_complex+="text='%{pts\:localtime\:${tc_epoch}\:%Y-%m-%dT%H\\\\\:%M\\\\\:%S}'"
             filter_complex+="[tc_drawn];"
-            filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[tc_restored];"
-            filter_complex+="[tc_restored]format=yuv420p[outv]"
+            filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[final_dt];"
+            filter_complex+="[final_dt]format=yuv420p[outv]"
         else
-            filter_complex+="[combined]format=yuv420p[outv]"
+            filter_complex+="[${dt_in}]format=yuv420p[outv]"
         fi
     else
-        filter_complex+="[combined]format=yuv420p[outv]"
+        filter_complex+="[${dt_in}]format=yuv420p[outv]"
     fi
 
     ffmpeg -y -v warning -stats_period 0.5 -progress pipe:1 \
@@ -749,8 +790,16 @@ main() {
     # Extract auto-calculated panel height and timecode position
     local INFO_PANEL_HEIGHT
     INFO_PANEL_HEIGHT=$(echo "$panel_output" | grep "panel_height=" | cut -d= -f2)
-    TIMECODE_X=$(echo "$panel_output" | grep "timecode_x=" | cut -d= -f2)
-    TIMECODE_Y=$(echo "$panel_output" | grep "timecode_y=" | cut -d= -f2)
+    TIMECODE_X=$(echo "$panel_output" | grep "timecode_x=" | cut -d= -f2 || true)
+    TIMECODE_Y=$(echo "$panel_output" | grep "timecode_y=" | cut -d= -f2 || true)
+
+    # Extract scroll fields (for long text that needs ticker animation)
+    SCROLL_FIELDS=()
+    while IFS= read -r line; do
+        SCROLL_FIELDS+=("$line")
+    done < <(echo "$panel_output" | grep "^scroll_field=" || true)
+    SCROLL_VALUE_X=$(echo "$panel_output" | grep "scroll_value_x=" | cut -d= -f2 || true)
+    SCROLL_VALUE_W=$(echo "$panel_output" | grep "scroll_value_w=" | cut -d= -f2 || true)
 
     # Calculate spectrogram height from remaining space
     local SPEC_HEIGHT
@@ -823,7 +872,10 @@ main() {
         "$SPEED_FACTOR" \
         "$INFO_FONT_SIZE" \
         "$TIMECODE_X" \
-        "$TIMECODE_Y"
+        "$TIMECODE_Y" \
+        "${SCROLL_VALUE_X:-}" \
+        "${SCROLL_VALUE_W:-}" \
+        ${SCROLL_FIELDS[@]+"${SCROLL_FIELDS[@]}"}
 
     echo ""
     echo -e "${GREEN}${BOLD}Done!${RESET} Output: ${OUTPUT_FILE}"

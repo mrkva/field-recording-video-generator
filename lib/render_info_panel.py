@@ -112,42 +112,38 @@ def render_info_panel(output_png, width, font_size,
 
     max_value_w = width - value_x - padding_x - map_reserve_w
 
-    # Wrap long values (respecting map widget space)
-    all_lines = []  # list of (label_or_none, value_text)
+    # Check which values overflow and need scrolling
+    scroll_fields = []  # list of (label, y_pos, full_text) — filled during rendering
+    all_lines = []  # list of (label, value_text, needs_scroll)
     for label, value in entries:
-        current = ""
-        is_first = True
-        for ch in value:
-            test = current + ch
-            if font.getlength(test) > max_value_w and current:
-                all_lines.append((label if is_first else None, current))
-                current = ch
-                is_first = False
-            else:
-                current = test
-        if current:
-            all_lines.append((label if is_first else None, current))
+        text_w = font.getlength(value)
+        if text_w > max_value_w:
+            all_lines.append((label, value, True))
+        else:
+            all_lines.append((label, value, False))
 
-    total_h = 2 * padding_y + len(all_lines) * line_height + (len(entries) - 1) * line_gap + 2
+    total_h = 2 * padding_y + len(all_lines) * line_height + (len(all_lines) - 1) * line_gap + 2
     img = Image.new('RGB', (width, total_h), color=bg_color)
     draw = ImageDraw.Draw(img)
 
     timecode_x = 0
     timecode_y = 0
     y = padding_y
-    for i, (label, text) in enumerate(all_lines):
-        if label is not None and i > 0:
-            y += line_gap  # gap between entries
+    for i, (label, text, needs_scroll) in enumerate(all_lines):
+        if i > 0:
+            y += line_gap
 
-        if label is not None:
-            # Draw label padded to fixed column
-            padded_label = label.ljust(label_width)
-            draw.text((padding_x, y), padded_label, fill=label_color, font=font)
+        # Draw label padded to fixed column
+        padded_label = label.ljust(label_width)
+        draw.text((padding_x, y), padded_label, fill=label_color, font=font)
 
         # If dynamic_time, skip rendering the TIME value (drawtext will handle it)
         if dynamic_time and label == "TIME":
             timecode_x = int(value_x)
             timecode_y = int(y)
+        elif needs_scroll:
+            # Don't render — ffmpeg drawtext will scroll it
+            scroll_fields.append((label, int(y), text))
         else:
             draw.text((value_x, y), text, fill=value_color, font=font)
         y += line_height
@@ -178,7 +174,7 @@ def render_info_panel(output_png, width, font_size,
               fill=separator_color, width=1)
 
     img.save(output_png)
-    return total_h, timecode_x, timecode_y
+    return total_h, timecode_x, timecode_y, scroll_fields, int(value_x), int(max_value_w)
 
 
 def main():
@@ -207,7 +203,7 @@ def main():
         else:
             datetime_str = "UNKNOWN"
 
-    panel_height, tc_x, tc_y = render_info_panel(
+    panel_height, tc_x, tc_y, scroll_fields, val_x, val_w = render_info_panel(
         output_png=args.output,
         width=args.width,
         font_size=args.font_size,
@@ -226,6 +222,13 @@ def main():
     if args.dynamic_time:
         print(f"timecode_x={tc_x}")
         print(f"timecode_y={tc_y}")
+    for label, y_pos, text in scroll_fields:
+        # Escape colons and backslashes for safe parsing
+        safe_text = text.replace('\\', '\\\\').replace(':', '\\:')
+        print(f"scroll_field={y_pos}:{safe_text}")
+    if scroll_fields:
+        print(f"scroll_value_x={val_x}")
+        print(f"scroll_value_w={val_w}")
 
 
 if __name__ == '__main__':
