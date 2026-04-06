@@ -129,6 +129,11 @@ def render_info_panel(output_png, width, font_size,
     img = Image.new('RGB', (width, total_h), color=bg_color)
     draw = ImageDraw.Draw(img)
 
+    # FFmpeg drawtext y= positions at top of rendered glyphs, while Pillow
+    # draw.text y= includes the font's top bearing (ascent padding above glyphs).
+    # Compute the offset so drawtext values align with Pillow-rendered labels.
+    drawtext_y_offset = font.getbbox("A")[1]  # top bearing in pixels
+
     timecode_x = 0
     timecode_y = 0
     y = padding_y
@@ -143,10 +148,10 @@ def render_info_panel(output_png, width, font_size,
         # If dynamic_time, skip rendering the TIME value (drawtext will handle it)
         if dynamic_time and label == "TIME":
             timecode_x = int(value_x)
-            timecode_y = int(y)
+            timecode_y = int(y + drawtext_y_offset)
         elif needs_scroll:
             # Record scroll field for drawtext animation in ffmpeg
-            scroll_fields.append((label, int(y), text))
+            scroll_fields.append((label, int(y + drawtext_y_offset), text))
         else:
             draw.text((value_x, y), text, fill=value_color, font=font)
         y += line_height
