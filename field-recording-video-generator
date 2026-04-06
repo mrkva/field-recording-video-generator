@@ -892,6 +892,7 @@ main() {
         --playback-speed "$PLAYBACK_LABEL" \
         --sample-info "${AUDIO_SAMPLE_RATE}HZ ${AUDIO_BIT_DEPTH}BIT${AUDIO_FORMAT:+ $AUDIO_FORMAT}" \
         --coordinates "$META_COORDINATES" \
+        --max-value-chars "${MAX_VALUE_CHARS:-32}" \
         $dynamic_time_flag $animated_map_flag)
 
     # Extract auto-calculated panel height and timecode position

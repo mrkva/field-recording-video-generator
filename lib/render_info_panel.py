@@ -215,6 +215,8 @@ def main():
                         help='Leave TIME value blank for drawtext overlay')
     parser.add_argument('--animated-map', action='store_true',
                         help='Reserve map space but leave blank for animated overlay')
+    parser.add_argument('--max-value-chars', type=int, default=32,
+                        help='Max characters for value fields before scrolling')
     args = parser.parse_args()
 
     datetime_str = args.datetime
@@ -240,6 +242,7 @@ def main():
         coordinates=args.coordinates,
         dynamic_time=args.dynamic_time,
         animated_map=args.animated_map,
+        max_value_chars=args.max_value_chars,
     )
 
     print(f"panel_height={panel_height}")
