@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Field Recording Video Generator</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --border: #2a2a2a;
+    --text: #e6e6e6;
+    --dim: #787878;
+    --accent: #00ff78;
+    --accent-dim: #00aa50;
+    --red: #ff4444;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 640px;
+  }
+
+  h1 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: var(--dim);
+    margin-bottom: 32px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Drop zone */
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 60px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    margin-bottom: 24px;
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--accent);
+    background: rgba(0, 255, 120, 0.03);
+  }
+  .dropzone p { color: var(--dim); font-size: 13px; }
+  .dropzone .icon { font-size: 32px; margin-bottom: 12px; opacity: 0.4; }
+  .dropzone input[type="file"] { display: none; }
+
+  .file-info {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    font-size: 12px;
+    color: var(--dim);
+    line-height: 1.8;
+  }
+  .file-info strong { color: var(--text); }
+
+  /* Form */
+  .form-section {
+    margin-bottom: 24px;
+  }
+  .form-section h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--dim);
+    margin-bottom: 12px;
+  }
+
+  .field {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 12px;
+  }
+  .field label {
+    flex: 0 0 120px;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--dim);
+    text-align: right;
+  }
+  .field input, .field select {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 8px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .field input:focus, .field select:focus {
+    border-color: var(--accent-dim);
+  }
+  .field input::placeholder { color: #444; }
+
+  .field-row {
+    display: flex;
+    gap: 8px;
+  }
+  .field-row .field { flex: 1; margin-bottom: 0; }
+
+  .toggle-field {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    gap: 12px;
+  }
+  .toggle-field label {
+    flex: 0 0 120px;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--dim);
+    text-align: right;
+  }
+  .toggle {
+    width: 40px;
+    height: 22px;
+    background: var(--border);
+    border-radius: 11px;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s;
+  }
+  .toggle.on { background: var(--accent-dim); }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    background: var(--text);
+    border-radius: 50%;
+    top: 3px;
+    left: 3px;
+    transition: transform 0.2s;
+  }
+  .toggle.on::after { transform: translateX(18px); }
+
+  /* Generate button */
+  .btn-generate {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn-generate:hover { opacity: 0.9; }
+  .btn-generate:disabled {
+    background: var(--border);
+    color: var(--dim);
+    cursor: not-allowed;
+  }
+
+  /* Progress */
+  .progress-area {
+    margin-top: 24px;
+    display: none;
+  }
+  .progress-area.visible { display: block; }
+
+  .progress-bar-track {
+    width: 100%;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  .progress-log {
+    font-size: 12px;
+    color: var(--dim);
+    line-height: 1.8;
+  }
+  .progress-log .active { color: var(--accent); }
+  .progress-log .error { color: var(--red); }
+
+  /* Download */
+  .download-area {
+    margin-top: 20px;
+    display: none;
+  }
+  .download-area.visible { display: block; }
+
+  .btn-download {
+    display: inline-block;
+    padding: 12px 24px;
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.2s;
+  }
+  .btn-download:hover {
+    background: rgba(0, 255, 120, 0.08);
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Field Recording Video Generator</h1>
+
+  <!-- Drop zone -->
+  <div class="dropzone" id="dropzone">
+    <div class="icon">&#9655;</div>
+    <p>Drop a WAV file here or click to browse</p>
+    <input type="file" id="fileInput" accept=".wav,.WAV">
+  </div>
+
+  <!-- File info (shown after upload) -->
+  <div class="file-info hidden" id="fileInfo"></div>
+
+  <!-- Settings form (shown after upload) -->
+  <form id="settingsForm" class="hidden">
+
+    <div class="form-section">
+      <h2>Metadata</h2>
+      <div class="field">
+        <label>Date/Time</label>
+        <input type="text" id="datetime" placeholder="2024-03-15T14:30:22">
+      </div>
+      <div class="field">
+        <label>Subject</label>
+        <input type="text" id="subject" placeholder="Dawn chorus">
+      </div>
+      <div class="field">
+        <label>Recorder</label>
+        <input type="text" id="recorder" placeholder="Zoom H5">
+      </div>
+      <div class="field">
+        <label>Location</label>
+        <input type="text" id="location" placeholder="Optional">
+      </div>
+      <div class="field">
+        <label>Coordinates</label>
+        <input type="text" id="coordinates" placeholder="51.07, 0.03 (optional)">
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h2>Spectrogram</h2>
+      <div class="field-row">
+        <div class="field">
+          <label>Freq Min</label>
+          <input type="number" id="freqMin" value="20">
+        </div>
+        <div class="field">
+          <label>Freq Max</label>
+          <input type="number" id="freqMax" placeholder="Nyquist">
+        </div>
+      </div>
+      <div class="field-row" style="margin-top: 8px;">
+        <div class="field">
+          <label>FFT Window</label>
+          <select id="fftWindow">
+            <option value="512">512</option>
+            <option value="1024">1024</option>
+            <option value="2048" selected>2048</option>
+            <option value="4096">4096</option>
+            <option value="8192">8192</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Preset</label>
+          <select id="preset">
+            <option value="square">Square (1080x1080)</option>
+            <option value="reel">Reel (1080x1920)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h2>Playback</h2>
+      <div class="field">
+        <label>Speed</label>
+        <input type="text" id="playbackSpeed" value="1x" placeholder="1x, 192000:44100, or 4.35">
+      </div>
+    </div>
+
+    <div class="form-section">
+      <h2>Options</h2>
+      <div class="toggle-field">
+        <label>Freq Grid</label>
+        <div class="toggle on" id="toggleGrid" data-value="y"></div>
+      </div>
+      <div class="toggle-field">
+        <label>Normalize</label>
+        <div class="toggle on" id="toggleNormalize" data-value="y"></div>
+      </div>
+    </div>
+
+    <button type="submit" class="btn-generate" id="btnGenerate" disabled>Generate Video</button>
+  </form>
+
+  <!-- Progress -->
+  <div class="progress-area" id="progressArea">
+    <div class="progress-bar-track">
+      <div class="progress-bar-fill" id="progressBar"></div>
+    </div>
+    <div class="progress-log" id="progressLog"></div>
+  </div>
+
+  <!-- Download -->
+  <div class="download-area" id="downloadArea">
+    <a class="btn-download" id="btnDownload" href="#">Download Video</a>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let uploadedData = null; // stores probe result + filepath
+
+// -- Toggle switches --
+document.querySelectorAll('.toggle').forEach(el => {
+  el.addEventListener('click', () => {
+    const on = el.classList.toggle('on');
+    el.dataset.value = on ? 'y' : 'n';
+  });
+});
+
+// -- Dropzone --
+const dropzone = $('dropzone');
+const fileInput = $('fileInput');
+
+dropzone.addEventListener('click', () => fileInput.click());
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+async function handleFile(file) {
+  if (!file.name.toLowerCase().endsWith('.wav')) {
+    alert('Please select a WAV file.');
+    return;
+  }
+
+  dropzone.querySelector('p').textContent = 'Uploading...';
+
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    const res = await fetch('/api/upload', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    uploadedData = data;
+    showFileInfo(data);
+    populateDefaults(data);
+    $('settingsForm').classList.remove('hidden');
+    $('btnGenerate').disabled = false;
+    dropzone.querySelector('p').textContent = file.name;
+
+    // Reset progress/download
+    $('progressArea').classList.remove('visible');
+    $('downloadArea').classList.remove('visible');
+  } catch (e) {
+    dropzone.querySelector('p').textContent = 'Upload failed: ' + e.message;
+  }
+}
+
+function showFileInfo(d) {
+  const dur = parseFloat(d.duration).toFixed(1);
+  $('fileInfo').innerHTML =
+    `<strong>${d.filename}</strong><br>` +
+    `${d.sample_rate} Hz &middot; ${d.channels}ch &middot; ${dur}s &middot; ${d.sample_info}`;
+  $('fileInfo').classList.remove('hidden');
+}
+
+function populateDefaults(d) {
+  $('datetime').value = d.detected_date || '';
+  $('freqMax').value = Math.floor(d.sample_rate / 2);
+}
+
+// -- Generate --
+$('settingsForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  if (!uploadedData) return;
+
+  $('btnGenerate').disabled = true;
+  $('btnGenerate').textContent = 'Generating...';
+  $('progressArea').classList.add('visible');
+  $('downloadArea').classList.remove('visible');
+  $('progressLog').innerHTML = '';
+  $('progressBar').style.width = '0%';
+
+  const payload = {
+    filepath: uploadedData.filepath,
+    filename: uploadedData.filename,
+    sample_rate: uploadedData.sample_rate,
+    duration: uploadedData.duration,
+    sample_info: uploadedData.sample_info,
+    datetime: $('datetime').value,
+    subject: $('subject').value,
+    recorder: $('recorder').value,
+    location: $('location').value,
+    coordinates: $('coordinates').value,
+    freq_min: $('freqMin').value,
+    freq_max: $('freqMax').value,
+    fft_window: $('fftWindow').value,
+    preset: $('preset').value,
+    playback_speed: $('playbackSpeed').value,
+    grid: $('toggleGrid').dataset.value,
+    normalize: $('toggleNormalize').dataset.value,
+  };
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const { job_id, error } = await res.json();
+    if (error) throw new Error(error);
+
+    // Listen to SSE
+    const evtSource = new EventSource(`/api/progress/${job_id}`);
+    evtSource.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+      if (msg.percent >= 0) {
+        $('progressBar').style.width = msg.percent + '%';
+      }
+      if (msg.percent === 100) {
+        evtSource.close();
+        addLog(msg.message, 'active');
+        $('btnDownload').href = `/api/download/${job_id}`;
+        $('downloadArea').classList.add('visible');
+        $('btnGenerate').textContent = 'Generate Video';
+        $('btnGenerate').disabled = false;
+      } else if (msg.percent < 0 && msg.percent !== -2) {
+        evtSource.close();
+        addLog(msg.message, 'error');
+        $('btnGenerate').textContent = 'Generate Video';
+        $('btnGenerate').disabled = false;
+      } else if (msg.percent !== -2) {
+        addLog(msg.message);
+      }
+    };
+    evtSource.onerror = () => {
+      evtSource.close();
+      addLog('Connection lost.', 'error');
+      $('btnGenerate').textContent = 'Generate Video';
+      $('btnGenerate').disabled = false;
+    };
+  } catch (e) {
+    addLog('Error: ' + e.message, 'error');
+    $('btnGenerate').textContent = 'Generate Video';
+    $('btnGenerate').disabled = false;
+  }
+});
+
+function addLog(text, cls) {
+  const el = document.createElement('div');
+  el.textContent = text;
+  if (cls) el.className = cls;
+  $('progressLog').appendChild(el);
+}
+</script>
+</body>
+</html>

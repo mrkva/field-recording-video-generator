@@ -52,11 +52,26 @@ sudo ln -sf "$(pwd)/field-recording-video-generator" /usr/local/bin/field-record
 
 ## Usage
 
+### Command line
+
 ```bash
 ./field-recording-video-generator recording.wav
 ```
 
-The program walks you through an interactive dialogue:
+### Web interface
+
+```bash
+./web.py                   # opens at http://localhost:5000
+./web.py --port 8080       # custom port
+./web.py --host 0.0.0.0   # listen on all interfaces
+```
+
+Drop a WAV file on the page, fill in the metadata, and hit Generate. Progress
+updates stream in real-time. Works from any browser on any OS.
+
+### Interactive prompts (CLI)
+
+The CLI walks you through an interactive dialogue:
 
 | Prompt | Default | Description |
 |---|---|---|
@@ -129,7 +144,9 @@ Presets live in `presets/` and set video dimensions, font size, and frame rate:
 ## Project structure
 
 ```
-field-recording-video-generator   # main shell script
+field-recording-video-generator   # main shell script (CLI)
+web.py                            # web interface (Flask)
+templates/index.html              # web UI
 lib/
   generate_spectrogram.py         # STFT + spectrogram image
   render_info_panel.py            # metadata overlay panel
