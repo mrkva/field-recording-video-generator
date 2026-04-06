@@ -228,6 +228,100 @@ probe_audio() {
 }
 
 # ============================================================================
+# Load session.frm.txt sidecar metadata
+# ============================================================================
+load_frm_metadata() {
+    local input_file="$1"
+    local input_dir
+    input_dir=$(dirname "$input_file")
+    local frm_file="${input_dir}/session.frm.txt"
+
+    # Clear FRM variables
+    FRM_TITLE="" FRM_RECORDER="" FRM_LOCATION="" FRM_COORDINATES=""
+    FRM_DATETIME="" FRM_FOUND="n"
+
+    [[ -f "$frm_file" ]] || return 0
+    FRM_FOUND="y"
+
+    # Parse with Python/YAML
+    eval "$("$PYTHON" -c "
+import yaml, sys, os
+
+with open(sys.argv[1]) as f:
+    doc = yaml.safe_load(f)
+
+if not isinstance(doc, dict):
+    sys.exit(0)
+
+def sh(name, val):
+    if val:
+        # Shell-escape single quotes
+        val = str(val).replace(\"'\", \"'\\\"'\\\"'\")
+        print(f\"{name}='{val}'\")
+
+session = doc.get('session', {}) or {}
+sh('FRM_TITLE', session.get('title', ''))
+
+equip = doc.get('equipment', {}) or {}
+recorder = equip.get('recorder', {}) or {}
+mics = equip.get('microphones', []) or []
+rec_model = recorder.get('model', '')
+mic_models = [m.get('model', '') for m in mics if m.get('model')]
+if rec_model and mic_models:
+    sh('FRM_RECORDER', rec_model + ' + ' + ' + '.join(dict.fromkeys(mic_models)))
+elif rec_model:
+    sh('FRM_RECORDER', rec_model)
+elif mic_models:
+    sh('FRM_RECORDER', ' + '.join(dict.fromkeys(mic_models)))
+
+loc = doc.get('location', {}) or {}
+parts = [loc.get('name', ''), loc.get('region', '')]
+loc_str = ', '.join(p for p in parts if p)
+sh('FRM_LOCATION', loc_str)
+
+lat = loc.get('latitude')
+lon = loc.get('longitude')
+if lat is not None and lon is not None:
+    sh('FRM_COORDINATES', f'{lat}, {lon}')
+
+dt = doc.get('datetime', {}) or {}
+start = dt.get('start', '')
+if start:
+    # Convert to local naive ISO for display (strip offset)
+    s = str(start)
+    # datetime objects from YAML may already be parsed
+    from datetime import datetime as DT
+    if isinstance(start, DT):
+        s = start.strftime('%Y-%m-%dT%H:%M:%S')
+    else:
+        # Strip trailing timezone offset (+HH:MM or Z)
+        import re
+        s = re.sub(r'[+-]\d{2}:\d{2}$', '', s)
+        s = s.rstrip('Z')
+    sh('FRM_DATETIME', s)
+
+# Pass the input filename to check files[] for per-file start time
+basename = os.path.basename(sys.argv[2])
+files = doc.get('files', []) or []
+for fentry in files:
+    if not isinstance(fentry, dict):
+        continue
+    if fentry.get('filename', '') == basename:
+        fstart = fentry.get('start')
+        if fstart:
+            from datetime import datetime as DT
+            if isinstance(fstart, DT):
+                s = fstart.strftime('%Y-%m-%dT%H:%M:%S')
+            else:
+                import re
+                s = re.sub(r'[+-]\d{2}:\d{2}$', '', str(fstart))
+                s = s.rstrip('Z')
+            sh('FRM_DATETIME', s)
+        break
+" "$frm_file" "$input_file")"
+}
+
+# ============================================================================
 # Interactive dialogue
 # ============================================================================
 msg() {
@@ -259,6 +353,9 @@ interactive_dialogue() {
     local basename
     basename=$(basename "$input_file")
 
+    # Load session.frm.txt sidecar if present
+    load_frm_metadata "$input_file"
+
     msg ""
     msg "${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
     msg "${BOLD}║       FIELD RECORDING VIDEO GENERATOR                ║${RESET}"
@@ -266,9 +363,12 @@ interactive_dialogue() {
     msg ""
     msg "${DIM}File: ${RESET}${BOLD}${basename}${RESET}"
     msg "${DIM}Sample rate: ${AUDIO_SAMPLE_RATE} Hz | Channels: ${AUDIO_CHANNELS} | Duration: ${AUDIO_DURATION}s${RESET}"
+    if [[ "$FRM_FOUND" == "y" ]]; then
+        msg "${GREEN}Found session.frm.txt — metadata loaded${RESET}"
+    fi
     msg ""
 
-    # Date/time auto-detection
+    # Date/time: BWF timecode > FRM file-specific start > FRM session start > filename > file stat
     local detected_datetime
     detected_datetime=$(parse_datetime "$input_file")
     local has_timecode="n"
@@ -277,6 +377,23 @@ interactive_dialogue() {
         msg "${GREEN}Detected date/time: ${detected_datetime}${RESET}"
         META_DATETIME="$detected_datetime"
         has_timecode="y"
+    elif [[ -n "$FRM_DATETIME" && "$FRM_DATETIME" == *T??:??:?? ]]; then
+        # FRM has full datetime with time
+        msg "${GREEN}Date/time from session.frm.txt: ${FRM_DATETIME}${RESET}"
+        META_DATETIME="$FRM_DATETIME"
+        has_timecode="y"
+    elif [[ -n "$FRM_DATETIME" ]]; then
+        local frm_date="${FRM_DATETIME%%T*}"
+        msg "${GREEN}Date from session.frm.txt: ${frm_date}${RESET}"
+        msg "${DIM}No embedded timecode found. Enter precise start time if known.${RESET}"
+        local user_time
+        user_time=$(ask "Start time (HH:MM:SS, or Enter to show date only)" "")
+        if [[ -n "$user_time" ]]; then
+            META_DATETIME="${frm_date}T${user_time}"
+            has_timecode="y"
+        else
+            META_DATETIME="$frm_date"
+        fi
     elif [[ -n "$detected_datetime" ]]; then
         # Have a date but time may be inaccurate (from filename/file stat)
         local detected_date="${detected_datetime%%T*}"
@@ -295,11 +412,11 @@ interactive_dialogue() {
         META_DATETIME=$(ask "Date/time (ISO format, e.g. 2024-03-15T14:30:22, or Enter to skip)" "")
     fi
 
-    META_SUBJECT=$(ask "Recorded subject" "")
-    META_RECORDER=$(ask "Recorded with" "$AUDIO_ENCODED_BY")
-    META_LOCATION=$(ask "Location (optional, Enter to skip)" "")
+    META_SUBJECT=$(ask "Recorded subject" "${FRM_TITLE}")
+    META_RECORDER=$(ask "Recorded with" "${FRM_RECORDER:-$AUDIO_ENCODED_BY}")
+    META_LOCATION=$(ask "Location (optional, Enter to skip)" "${FRM_LOCATION}")
     if [[ -n "$META_LOCATION" ]]; then
-        META_COORDINATES=$(ask "Location coordinates for map (lat,lon, Enter to skip)" "")
+        META_COORDINATES=$(ask "Location coordinates for map (lat,lon, Enter to skip)" "${FRM_COORDINATES}")
     else
         META_COORDINATES=""
     fi
@@ -789,11 +906,14 @@ quick_defaults() {
     detected_datetime=$(parse_datetime "$input_file")
     local nyquist=$((AUDIO_SAMPLE_RATE / 2))
 
-    META_DATETIME="${detected_datetime:-$(date +%Y-%m-%dT%H:%M:%S)}"
-    META_SUBJECT="Windy forest in the night and footsteps with birds in the background"
-    META_RECORDER="${AUDIO_ENCODED_BY:-Unknown}"
-    META_LOCATION="Ashdown Forest, UK"
-    META_COORDINATES="51.07, 0.03"
+    # Load session.frm.txt sidecar if present
+    load_frm_metadata "$input_file"
+
+    META_DATETIME="${detected_datetime:-${FRM_DATETIME:-$(date +%Y-%m-%dT%H:%M:%S)}}"
+    META_SUBJECT="${FRM_TITLE:-Windy forest in the night and footsteps with birds in the background}"
+    META_RECORDER="${FRM_RECORDER:-${AUDIO_ENCODED_BY:-Unknown}}"
+    META_LOCATION="${FRM_LOCATION:-Ashdown Forest, UK}"
+    META_COORDINATES="${FRM_COORDINATES:-51.07, 0.03}"
     FREQ_MIN="20"
     FREQ_MAX="$nyquist"
     PLAYBACK_SPEED_INPUT="1x"
