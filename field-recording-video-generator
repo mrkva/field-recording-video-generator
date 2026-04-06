@@ -272,13 +272,27 @@ interactive_dialogue() {
     local detected_datetime
     detected_datetime=$(parse_datetime "$input_file")
     local has_timecode="n"
-    if [[ -n "$detected_datetime" ]]; then
+    if [[ -n "$detected_datetime" && "$detected_datetime" == *T??:??:?? ]]; then
+        # Full datetime with time — BWF timecode present
         msg "${GREEN}Detected date/time: ${detected_datetime}${RESET}"
         META_DATETIME="$detected_datetime"
         has_timecode="y"
+    elif [[ -n "$detected_datetime" ]]; then
+        # Have a date but time may be inaccurate (from filename/file stat)
+        local detected_date="${detected_datetime%%T*}"
+        msg "${GREEN}Detected date: ${detected_date}${RESET}"
+        msg "${DIM}No embedded timecode found. Enter precise start time if known.${RESET}"
+        local user_time
+        user_time=$(ask "Start time (HH:MM:SS, or Enter to show date only)" "")
+        if [[ -n "$user_time" ]]; then
+            META_DATETIME="${detected_date}T${user_time}"
+            has_timecode="y"
+        else
+            META_DATETIME="$detected_date"
+        fi
     else
         msg "${YELLOW}Could not detect date/time.${RESET}"
-        META_DATETIME=$(ask "Date/time (ISO format, e.g. 2024-03-15T14:30:22)" "")
+        META_DATETIME=$(ask "Date/time (ISO format, e.g. 2024-03-15T14:30:22, or Enter to skip)" "")
     fi
 
     META_SUBJECT=$(ask "Recorded subject" "")
@@ -317,6 +331,12 @@ interactive_dialogue() {
 
     FREQ_GRID="n"
     FFT_WINDOW=$(ask "FFT window size (e.g. 512, 1024, 2048, 4096, 8192)" "2048")
+
+    msg ""
+    msg "${DIM}Spectrogram detail: pixels per second of audio. Higher = more detail, wider image.${RESET}"
+    msg "${DIM}Try 50-100 for long ambient, 200 (default) for general, 400-800 for bird calls.${RESET}"
+    SPEC_PPS=$(ask "Spectrogram detail (pixels/sec)" "200")
+
     NORMALIZE_AUDIO=$(ask "Normalize audio to -16 LUFS? (y/n)" "y")
     if [[ "$has_timecode" == "y" ]]; then
         SHOW_TIMECODE="y"
@@ -439,9 +459,7 @@ else:
 calc_spec_dimensions() {
     local duration="$1"
     local viewport_w="$2"
-
-    # pixels per second: aim for good detail
-    local pps=200
+    local pps="${3:-200}"
     local total_w
     total_w=$("$PYTHON" -c "
 import math
@@ -644,16 +662,10 @@ for pos in range(cycle_len):
     window = window.replace(':', '\\\\:')
 
     dt_out = f'stxt_{dt_idx}_{pos}'
-    # Enable based on scroll position with 5-second delay.
-    # Use floor(t) first then subtract — avoids float precision glitch
-    # where floor(t-5) gives wrong result at exact second boundaries.
-    # max(0,...) ensures mod never gets negative input.
+    # max(0,floor(t)-5) holds at 0 for t<5 then advances 1/sec.
+    # No if() branch — avoids evaluation glitches at transition.
     ec = chr(92) + ','  # escaped comma for ffmpeg
-    scroll_expr = f'mod(max(0{ec}floor(t)-5){ec}{cycle_len})'
-    if pos == 0:
-        enable = f\"enable='if(lt(t{ec}5){ec}1{ec}eq({scroll_expr}{ec}0))'\"
-    else:
-        enable = f\"enable='if(lt(t{ec}5){ec}0{ec}eq({scroll_expr}{ec}{pos}))'\"
+    enable = f\"enable='eq(mod(max(0{ec}floor(t)-5){ec}{cycle_len}){ec}{pos})'\"
 
     filters += f'[{dt_in}]drawtext='
     filters += f'fontfile={font}:'
@@ -771,6 +783,7 @@ quick_defaults() {
     PHOTO_PATH=""
     FREQ_GRID="n"
     FFT_WINDOW="2048"
+    SPEC_PPS="200"
     NORMALIZE_AUDIO="y"
     SHOW_TIMECODE="y"
     OUTPUT_FILE="${input_file%.*}_video.mp4"
@@ -900,7 +913,7 @@ main() {
     echo -e "  ${CYAN}[3/5]${RESET} Generating spectrogram..."
     local spec_png="${TMPDIR}/spectrogram.png"
     local spec_total_w
-    spec_total_w=$(calc_spec_dimensions "$effective_duration" "$VIDEO_WIDTH")
+    spec_total_w=$(calc_spec_dimensions "$effective_duration" "$VIDEO_WIDTH" "$SPEC_PPS")
 
     local grid_flag=""
     if [[ "$FREQ_GRID" == "y" || "$FREQ_GRID" == "Y" || "$FREQ_GRID" == "yes" ]]; then

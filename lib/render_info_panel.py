@@ -143,16 +143,10 @@ def render_info_panel(output_png, width, font_size,
         # If dynamic_time, skip rendering the TIME value (drawtext will handle it)
         if dynamic_time and label == "TIME":
             timecode_x = int(value_x)
-            # Compensate for ffmpeg drawtext vs Pillow vertical alignment difference
-            # Pillow draw.text includes font ascent offset; ffmpeg drawtext uses y as
-            # the top of the text bounding box which sits slightly lower
-            y_correction = max(1, font_size // 12)
-            timecode_y = int(y) + y_correction
+            timecode_y = int(y)
         elif needs_scroll:
             # Record scroll field for drawtext animation in ffmpeg
-            # Apply same y correction as timecode for consistent alignment
-            y_correction = max(1, font_size // 12)
-            scroll_fields.append((label, int(y) + y_correction, text))
+            scroll_fields.append((label, int(y), text))
         else:
             draw.text((value_x, y), text, fill=value_color, font=font)
         y += line_height
