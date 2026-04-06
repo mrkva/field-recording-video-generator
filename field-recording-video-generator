@@ -519,19 +519,21 @@ print(0)
                 tc_font="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
             fi
 
-            local tc_fmt='%Y-%m-%dT%H\\:%M\\:%S'
             local tc_margin=20
 
+            # Generate a drawtext text file to avoid escaping hell
+            local tc_textfile="${TMPDIR}/tc_text.txt"
+            echo -n "%{pts\\:localtime\\:${tc_epoch}\\:%Y-%m-%dT%H\\\\:%M\\\\:%S}" > "$tc_textfile"
+
             # Use setpts to scale PTS for correct timecode at non-1x speeds
-            # PTS/speed_factor gives original recording time progression
             filter_complex+="[combined]setpts=PTS/${speed_factor}[tc_scaled];"
             filter_complex+="[tc_scaled]drawtext="
-            filter_complex+="fontfile='${tc_font}':"
+            filter_complex+="fontfile=${tc_font}:"
             filter_complex+="fontsize=${font_size}:"
             filter_complex+="fontcolor=white:"
             filter_complex+="x=w-tw-${tc_margin}:"
             filter_complex+="y=h-th-${tc_margin}:"
-            filter_complex+="text='%{pts\\:localtime\\:${tc_epoch}\\:${tc_fmt}}':"
+            filter_complex+="textfile=${tc_textfile}:"
             filter_complex+="shadowcolor=black:shadowx=2:shadowy=2"
             filter_complex+="[tc_drawn];"
             # Restore original PTS timing
