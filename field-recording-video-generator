@@ -644,7 +644,8 @@ for pos in range(cycle_len):
     dt_out = f'stxt_{dt_idx}_{pos}'
     # Enable when floor(t) mod cycle_len == pos
     # Commas escaped for ffmpeg filter_complex parser
-    enable = f\"enable='eq(mod(floor(t)\\,{cycle_len})\\,{pos})'\"
+    esc_comma = chr(92) + ','
+    enable = f\"enable='eq(mod(floor(t){esc_comma}{cycle_len}){esc_comma}{pos})'\"
 
     filters += f'[{dt_in}]drawtext='
     filters += f'fontfile={font}:'
