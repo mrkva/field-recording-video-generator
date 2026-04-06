@@ -80,7 +80,7 @@ parse_datetime() {
 import re, os, sys, datetime, subprocess, json
 filepath = sys.argv[1]
 
-# Priority 1: BWF embedded metadata (origination_date + origination_time)
+# Priority 1: BWF embedded metadata
 try:
     result = subprocess.run(
         ['ffprobe', '-v', 'error', '-show_entries', 'format_tags',
@@ -94,8 +94,10 @@ try:
                  tags.get('creation_time', '') or '')
     time_ref = tags.get('time_reference', '')
 
-    # If we have a time_reference (samples since midnight), compute time from it
-    if orig_date and time_ref and not orig_time:
+    # time_reference (samples since midnight) is the most accurate for
+    # trimmed files — editors update it even when creation_time stays the same.
+    # Always prefer it when available.
+    if orig_date and time_ref:
         try:
             sr_out = subprocess.run(
                 ['ffprobe', '-v', 'error', '-select_streams', 'a:0',
@@ -987,6 +989,17 @@ main() {
     local filesize
     filesize=$(du -h "$OUTPUT_FILE" | cut -f1)
     echo -e "${DIM}Size: ${filesize}${RESET}"
+
+    # Export metadata text file alongside the video
+    local txt_file="${OUTPUT_FILE%.*}.txt"
+    {
+        [[ -n "$META_SUBJECT" ]]     && echo "SUBJECT: ${META_SUBJECT}"
+        [[ -n "$META_DATETIME" ]]    && echo "TIME: ${META_DATETIME}"
+        [[ -n "$META_LOCATION" ]]    && echo "LOCATION: ${META_LOCATION}"
+        [[ -n "$META_COORDINATES" ]] && echo "COORDINATES: ${META_COORDINATES}"
+        [[ -n "$META_RECORDER" ]]    && echo "EQUIPMENT: ${META_RECORDER}"
+    } > "$txt_file"
+    echo -e "${DIM}Metadata: ${txt_file}${RESET}"
 }
 
 main "$@"
