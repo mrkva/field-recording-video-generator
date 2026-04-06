@@ -58,7 +58,7 @@ check_dependencies() {
 # ============================================================================
 usage() {
     cat <<'EOF'
-Usage: field-recording-video-generator <input.wav>
+Usage: field-recording-video-generator [options] <input.wav>
 
 Generate a video from a WAV field recording with scrolling spectrogram,
 playback cursor, and metadata overlay.
@@ -66,6 +66,7 @@ playback cursor, and metadata overlay.
 The program will interactively ask for metadata and settings.
 
 Options:
+  -q, --quick   Quick test mode: skip dialogue, use default metadata
   -h, --help    Show this help message
 EOF
     exit 0
@@ -508,9 +509,48 @@ build_ffmpeg_command() {
 # ============================================================================
 # Main
 # ============================================================================
+quick_defaults() {
+    # Populate all dialogue variables with sensible test defaults
+    local input_file="$1"
+    local detected_datetime
+    detected_datetime=$(parse_datetime "$input_file")
+    local nyquist=$((AUDIO_SAMPLE_RATE / 2))
+
+    META_DATETIME="${detected_datetime:-$(date +%Y-%m-%dT%H:%M:%S)}"
+    META_SUBJECT="Test recording"
+    META_RECORDER="Unknown"
+    META_LOCATION=""
+    META_COORDINATES=""
+    FREQ_MIN="20"
+    FREQ_MAX="$nyquist"
+    PLAYBACK_SPEED_INPUT="1x"
+    PRESET="square"
+    PHOTO_PATH=""
+    FREQ_GRID="y"
+    FFT_WINDOW="2048"
+    NORMALIZE_AUDIO="y"
+    OUTPUT_FILE="${input_file%.*}_video.mp4"
+
+    msg ""
+    msg "${BOLD}Quick test mode${RESET} — using default metadata"
+    msg "${DIM}Subject: ${META_SUBJECT} | Preset: ${PRESET} | FFT: ${FFT_WINDOW}${RESET}"
+    msg ""
+}
+
 main() {
     # Parse args
-    if [[ $# -lt 1 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
+    local quick_mode=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -q|--quick) quick_mode=true; shift ;;
+            -h|--help)  usage ;;
+            -*)         echo -e "${RED}Unknown option: $1${RESET}" >&2; usage ;;
+            *)          break ;;
+        esac
+    done
+
+    if [[ $# -lt 1 ]]; then
         usage
     fi
 
@@ -526,8 +566,12 @@ main() {
     # Probe audio
     probe_audio "$input_file"
 
-    # Interactive dialogue
-    interactive_dialogue "$input_file"
+    # Interactive dialogue or quick defaults
+    if [[ "$quick_mode" == true ]]; then
+        quick_defaults "$input_file"
+    else
+        interactive_dialogue "$input_file"
+    fi
 
     # Parse playback speed
     parse_playback_speed "$PLAYBACK_SPEED_INPUT" "$AUDIO_SAMPLE_RATE"
