@@ -36,7 +36,7 @@ def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
                       location="", playback_speed="", coordinates="",
                       sample_info="", dynamic_time=False, animated_map=False,
-                      max_value_chars=32):
+                      max_value_chars=32, video_duration=0):
     """Render info panel — NASA/telemetry camera overlay aesthetic.
 
     All caps, monospace, tight layout with technical formatting.
@@ -149,18 +149,28 @@ def render_info_panel(output_png, width, font_size,
             y_correction = max(1, font_size // 12)
             timecode_y = int(y) + y_correction
         elif needs_scroll:
-            # Render full text as a wide PNG strip for ffmpeg crop animation
-            # Add padding of max_value_chars spaces so text scrolls off cleanly
-            padded_text = text + " " * max_value_chars
-            strip_w = int(char_w * len(padded_text)) + 4
-            strip_h = line_height + 4
-            strip_img = Image.new('RGB', (strip_w, strip_h), color=bg_color)
-            strip_draw = ImageDraw.Draw(strip_img)
-            strip_draw.text((0, 0), padded_text, fill=value_color, font=font)
-            strip_dir = os.path.dirname(output_png)
-            strip_path = os.path.join(strip_dir, f"scroll_strip_{len(scroll_fields)}.png")
-            strip_img.save(strip_path)
-            scroll_fields.append((label, int(y), text, strip_path))
+            # Generate frame PNGs for character-by-character scrolling
+            # Looping text with bullet delimiter
+            looping_text = text + " \u2022 " + text
+            total_positions = len(text) + 3  # text + " • "
+            visible_w = int(char_w * max_value_chars)
+            num_seconds = max(1, int(video_duration) + 1) if video_duration > 0 else 120
+
+            scroll_dir = os.path.join(os.path.dirname(output_png),
+                                      f"scroll_frames_{len(scroll_fields)}")
+            os.makedirs(scroll_dir, exist_ok=True)
+
+            for sec in range(num_seconds):
+                offset = sec % total_positions
+                window = looping_text[offset:offset + max_value_chars]
+                if len(window) < max_value_chars:
+                    window += looping_text[:max_value_chars - len(window)]
+                frame = Image.new('RGB', (visible_w, line_height), color=bg_color)
+                fdraw = ImageDraw.Draw(frame)
+                fdraw.text((0, 0), window, fill=value_color, font=font)
+                frame.save(os.path.join(scroll_dir, f"frame_{sec:06d}.png"))
+
+            scroll_fields.append((label, int(y), text, scroll_dir, visible_w))
         else:
             draw.text((value_x, y), text, fill=value_color, font=font)
         y += line_height
@@ -224,6 +234,8 @@ def main():
                         help='Leave TIME value blank for drawtext overlay')
     parser.add_argument('--animated-map', action='store_true',
                         help='Reserve map space but leave blank for animated overlay')
+    parser.add_argument('--video-duration', type=float, default=0,
+                        help='Video duration in seconds (for scroll frame generation)')
 
     args = parser.parse_args()
 
@@ -250,6 +262,7 @@ def main():
         coordinates=args.coordinates,
         dynamic_time=args.dynamic_time,
         animated_map=args.animated_map,
+        video_duration=args.video_duration,
     )
 
     print(f"panel_height={panel_height}")
@@ -260,12 +273,10 @@ def main():
         print(f"map_x={map_x}")
         print(f"map_y={map_y}")
         print(f"map_size={map_size}")
-    for label, y_pos, text, strip_path in scroll_fields:
-        print(f"scroll_field={y_pos}:{strip_path}")
+    for label, y_pos, text, scroll_dir, vis_w in scroll_fields:
+        print(f"scroll_field={y_pos}:{scroll_dir}:{vis_w}")
     if scroll_fields:
         print(f"scroll_value_x={val_x}")
-        print(f"scroll_char_w={char_w}")
-        print(f"scroll_max_chars={max_chars}")
 
 
 if __name__ == '__main__':
