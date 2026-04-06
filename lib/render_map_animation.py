@@ -156,17 +156,12 @@ def render_map_animation(output_dir, lat, lon, widget_size, duration, fps,
     sys.stderr.write("\r  Writing map frames...                    \n")
     sys.stderr.flush()
 
-    # Distribute frames across zoom levels
-    # Spend less time on low zooms, more on mid-range for dramatic effect
-    # Use an ease-in curve: zoom accelerates at start, decelerates at end
+    # Each zoom level holds for 2 seconds, then stays at final zoom
+    secs_per_zoom = 2
     for frame_idx in range(total_frames):
-        t = frame_idx / max(1, total_frames - 1)  # 0.0 to 1.0
-
-        # Ease-out curve: fast zoom at start, settling at end
-        eased_t = 1.0 - (1.0 - t) ** 2.5
-
-        zoom_float = zoom_start + eased_t * (zoom_end - zoom_start)
-        zoom_int = min(zoom_end, max(zoom_start, int(zoom_float)))
+        t_sec = frame_idx / fps
+        zoom_offset = min(int(t_sec / secs_per_zoom), num_zooms - 1)
+        zoom_int = zoom_levels[zoom_offset]
 
         img = zoom_images[zoom_int]
         img.save(os.path.join(output_dir, f"map_{frame_idx:06d}.png"))

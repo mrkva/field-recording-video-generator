@@ -144,19 +144,18 @@ def render_freq_scale(output_png, width, height, freq_min, freq_max, font_size=3
     minor_tick_color = (180, 180, 180, 140)
     outline_color = (0, 0, 0, 220)
 
-    # Minor ticks — thin, no label, no outline
+    # Minor ticks — thin dash only
     for freq in minors:
         y = freq_to_y(freq, f_lo, f_hi, height)
         draw.line([(tick_start, y), (minor_tick_end, y)], fill=minor_tick_color, width=1)
 
-    # Major ticks + labels
+    # Major ticks + labels — simple line, no outline (outline creates visible bands)
     for freq in majors:
         y = freq_to_y(freq, f_lo, f_hi, height)
         label = format_freq(freq)
 
-        # Major tick
-        draw_outlined_line(draw, (tick_start, y, major_tick_end, y),
-                           fill=tick_color, outline=outline_color, width=2)
+        # Major tick — plain line, no outline
+        draw.line([(tick_start, y), (major_tick_end, y)], fill=tick_color, width=1)
 
         # Label — right-aligned within label column
         bbox = font.getbbox(label)
