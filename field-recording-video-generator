@@ -313,7 +313,7 @@ interactive_dialogue() {
         PHOTO_PATH=""
     fi
 
-    FREQ_GRID="y"
+    FREQ_GRID="n"
     FFT_WINDOW=$(ask "FFT window size (e.g. 512, 1024, 2048, 4096, 8192)" "2048")
     NORMALIZE_AUDIO=$(ask "Normalize audio to -16 LUFS? (y/n)" "y")
     if [[ "$has_timecode" == "y" ]]; then
@@ -767,7 +767,7 @@ quick_defaults() {
     PLAYBACK_SPEED_INPUT="1x"
     PRESET="reel"
     PHOTO_PATH=""
-    FREQ_GRID="y"
+    FREQ_GRID="n"
     FFT_WINDOW="2048"
     NORMALIZE_AUDIO="y"
     SHOW_TIMECODE="y"
