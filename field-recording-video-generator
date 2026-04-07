@@ -293,11 +293,13 @@ sh('IXML_SCENE', scene)
 note = root.findtext('NOTE', '') or ''
 sh('IXML_NOTE', note.split(chr(10))[0] if note else '')
 
-# Location
-loc_name = root.findtext('LOCATION_NAME', '') or ''
+# Location — nested inside <LOCATION> parent
+loc_name = (root.findtext('LOCATION/LOCATION_NAME', '') or
+            root.findtext('LOCATION_NAME', '') or '')
 sh('IXML_LOCATION', loc_name)
 
-loc_gps = root.findtext('LOCATION_GPS', '') or ''
+loc_gps = (root.findtext('LOCATION/LOCATION_GPS', '') or
+           root.findtext('LOCATION_GPS', '') or '')
 if loc_gps:
     # Expect 'lat, lon' in decimal degrees
     sh('IXML_COORDINATES', loc_gps)
