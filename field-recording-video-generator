@@ -228,6 +228,110 @@ probe_audio() {
 }
 
 # ============================================================================
+# Extract iXML metadata from WAV file
+# ============================================================================
+load_ixml_metadata() {
+    local input_file="$1"
+
+    # Clear iXML variables
+    IXML_SCENE="" IXML_NOTE="" IXML_LOCATION="" IXML_COORDINATES=""
+    IXML_RECORDER="" IXML_FOUND="n"
+
+    eval "$("$PYTHON" -c "
+import sys, struct, xml.etree.ElementTree as ET, re
+
+def read_ixml(filepath):
+    '''Read iXML chunk from WAV/RIFF file.'''
+    with open(filepath, 'rb') as f:
+        riff = f.read(4)
+        if riff != b'RIFF':
+            return None
+        f.read(4)  # file size
+        wave = f.read(4)
+        if wave != b'WAVE':
+            return None
+        while True:
+            chunk_hdr = f.read(8)
+            if len(chunk_hdr) < 8:
+                break
+            chunk_id = chunk_hdr[:4]
+            chunk_size = struct.unpack('<I', chunk_hdr[4:8])[0]
+            if chunk_id == b'iXML':
+                data = f.read(chunk_size)
+                # Strip null bytes and BOM
+                return data.split(b'\x00')[0].decode('utf-8', errors='replace').lstrip('\ufeff')
+            else:
+                # Skip chunk (pad to even boundary)
+                f.seek(chunk_size + (chunk_size % 2), 1)
+    return None
+
+def sh(name, val):
+    if val:
+        val = str(val).strip()
+        if not val:
+            return
+        val = val.replace(\"'\", \"'\\\"'\\\"'\")
+        print(f\"{name}='{val}'\")
+
+filepath = sys.argv[1]
+xml_str = read_ixml(filepath)
+if not xml_str:
+    sys.exit(0)
+
+try:
+    root = ET.fromstring(xml_str)
+except ET.ParseError:
+    sys.exit(0)
+
+print(\"IXML_FOUND='y'\")
+
+# SCENE → subject
+scene = root.findtext('SCENE', '') or ''
+sh('IXML_SCENE', scene)
+
+# NOTE → free-text description (first line as summary)
+note = root.findtext('NOTE', '') or ''
+sh('IXML_NOTE', note.split(chr(10))[0] if note else '')
+
+# Location
+loc_name = root.findtext('LOCATION_NAME', '') or ''
+sh('IXML_LOCATION', loc_name)
+
+loc_gps = root.findtext('LOCATION_GPS', '') or ''
+if loc_gps:
+    # Expect 'lat, lon' in decimal degrees
+    sh('IXML_COORDINATES', loc_gps)
+
+# USER field — parse key-value pairs
+user = root.findtext('USER', '') or ''
+recordist = ''
+equipment = ''
+mic_parts = []
+for line in user.split(chr(10)):
+    line = line.strip()
+    if line.lower().startswith('recordist:'):
+        recordist = line.split(':', 1)[1].strip()
+    elif line.lower().startswith('recorder:') or line.lower().startswith('equipment:'):
+        equipment = line.split(':', 1)[1].strip()
+    elif line.lower().startswith('microphone') or line.lower().startswith('mic'):
+        mic_parts.append(line.split(':', 1)[1].strip() if ':' in line else '')
+
+rec_str = equipment
+if mic_parts:
+    mics = ' + '.join(m for m in mic_parts if m)
+    if rec_str and mics:
+        rec_str = rec_str + ' + ' + mics
+    elif mics:
+        rec_str = mics
+if not rec_str and recordist:
+    rec_str = ''
+sh('IXML_RECORDER', rec_str)
+if not rec_str and recordist:
+    sh('IXML_RECORDER', recordist)
+" "$input_file")"
+}
+
+# ============================================================================
 # Load session.frm.txt sidecar metadata
 # ============================================================================
 load_frm_metadata() {
@@ -353,7 +457,8 @@ interactive_dialogue() {
     local basename
     basename=$(basename "$input_file")
 
-    # Load session.frm.txt sidecar if present
+    # Load metadata sources: iXML from WAV, session.frm.txt sidecar
+    load_ixml_metadata "$input_file"
     load_frm_metadata "$input_file"
 
     msg ""
@@ -363,6 +468,9 @@ interactive_dialogue() {
     msg ""
     msg "${DIM}File: ${RESET}${BOLD}${basename}${RESET}"
     msg "${DIM}Sample rate: ${AUDIO_SAMPLE_RATE} Hz | Channels: ${AUDIO_CHANNELS} | Duration: ${AUDIO_DURATION}s${RESET}"
+    if [[ "$IXML_FOUND" == "y" ]]; then
+        msg "${GREEN}Found iXML metadata in WAV file${RESET}"
+    fi
     if [[ "$FRM_FOUND" == "y" ]]; then
         msg "${GREEN}Found session.frm.txt — metadata loaded${RESET}"
     fi
@@ -412,11 +520,17 @@ interactive_dialogue() {
         META_DATETIME=$(ask "Date/time (ISO format, e.g. 2024-03-15T14:30:22, or Enter to skip)" "")
     fi
 
-    META_SUBJECT=$(ask "Recorded subject" "${FRM_TITLE}")
-    META_RECORDER=$(ask "Recorded with" "${FRM_RECORDER:-$AUDIO_ENCODED_BY}")
-    META_LOCATION=$(ask "Location (optional, Enter to skip)" "${FRM_LOCATION}")
+    # Metadata defaults: FRM > iXML > BWF/empty
+    local def_subject="${FRM_TITLE:-${IXML_SCENE:-${IXML_NOTE}}}"
+    local def_recorder="${FRM_RECORDER:-${IXML_RECORDER:-$AUDIO_ENCODED_BY}}"
+    local def_location="${FRM_LOCATION:-$IXML_LOCATION}"
+    local def_coordinates="${FRM_COORDINATES:-$IXML_COORDINATES}"
+
+    META_SUBJECT=$(ask "Recorded subject" "$def_subject")
+    META_RECORDER=$(ask "Recorded with" "$def_recorder")
+    META_LOCATION=$(ask "Location (optional, Enter to skip)" "$def_location")
     if [[ -n "$META_LOCATION" ]]; then
-        META_COORDINATES=$(ask "Location coordinates for map (lat,lon, Enter to skip)" "${FRM_COORDINATES}")
+        META_COORDINATES=$(ask "Location coordinates for map (lat,lon, Enter to skip)" "$def_coordinates")
     else
         META_COORDINATES=""
     fi
@@ -906,14 +1020,15 @@ quick_defaults() {
     detected_datetime=$(parse_datetime "$input_file")
     local nyquist=$((AUDIO_SAMPLE_RATE / 2))
 
-    # Load session.frm.txt sidecar if present
+    # Load metadata sources: iXML from WAV, session.frm.txt sidecar
+    load_ixml_metadata "$input_file"
     load_frm_metadata "$input_file"
 
     META_DATETIME="${detected_datetime:-${FRM_DATETIME:-$(date +%Y-%m-%dT%H:%M:%S)}}"
-    META_SUBJECT="${FRM_TITLE:-Windy forest in the night and footsteps with birds in the background}"
-    META_RECORDER="${FRM_RECORDER:-${AUDIO_ENCODED_BY:-Unknown}}"
-    META_LOCATION="${FRM_LOCATION:-Ashdown Forest, UK}"
-    META_COORDINATES="${FRM_COORDINATES:-51.07, 0.03}"
+    META_SUBJECT="${FRM_TITLE:-${IXML_SCENE:-${IXML_NOTE:-Windy forest in the night and footsteps with birds in the background}}}"
+    META_RECORDER="${FRM_RECORDER:-${IXML_RECORDER:-${AUDIO_ENCODED_BY:-Unknown}}}"
+    META_LOCATION="${FRM_LOCATION:-${IXML_LOCATION:-Ashdown Forest, UK}}"
+    META_COORDINATES="${FRM_COORDINATES:-${IXML_COORDINATES:-51.07, 0.03}}"
     FREQ_MIN="20"
     FREQ_MAX="$nyquist"
     PLAYBACK_SPEED_INPUT="1x"
