@@ -353,13 +353,30 @@ for line in user.split(chr(10)):
     if line.lower().startswith('recordist:'):
         recordist = line.split(':', 1)[1].strip()
     elif line.lower().startswith('recorder:') or line.lower().startswith('equipment:'):
-        equipment = line.split(':', 1)[1].strip()
+        import re as _re
+        equipment = _re.sub(r'\s*\(fw[^)]*\)', '', line.split(':', 1)[1].strip())
     elif line.lower().startswith('microphone') or line.lower().startswith('mic'):
-        mic_parts.append(line.split(':', 1)[1].strip() if ':' in line else '')
+        raw = line.split(':', 1)[1].strip() if ':' in line else ''
+        # May contain multiple mics separated by ';'
+        for entry in raw.split(';'):
+            entry = entry.strip()
+            if entry:
+                mic_parts.append(entry)
+
+# Clean mic entries: strip channel numbers (1), (2) and polar patterns
+_patterns = {'cardioid','supercardioid','hypercardioid','omnidirectional',
+             'omni','figure-8','figure8','bidirectional','shotgun'}
+def clean_mic(s):
+    import re
+    s = re.sub(r'\s*\(\d+\)', '', s)  # strip (1), (2), etc.
+    parts = [p.strip().rstrip(',') for p in s.split(',')]
+    parts = [p for p in parts if p.lower() not in _patterns and p]
+    return ' '.join(parts).strip()
 
 rec_str = equipment
 if mic_parts:
-    cleaned = [m for m in mic_parts if m]
+    cleaned = [clean_mic(m) for m in mic_parts]
+    cleaned = [m for m in cleaned if m]
     unique = list(dict.fromkeys(cleaned))
     if len(cleaned) > 1 and len(unique) == 1:
         mic_str = unique[0] + (' (PAIR)' if len(cleaned) == 2 else f' (x{len(cleaned)})')
