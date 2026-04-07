@@ -233,7 +233,6 @@ probe_audio() {
 load_ixml_metadata() {
     local input_file="$1"
 
-    # Clear iXML variables
     IXML_SCENE="" IXML_NOTE="" IXML_LOCATION="" IXML_COORDINATES=""
     IXML_RECORDER="" IXML_FOUND="n"
 
@@ -353,8 +352,7 @@ for line in user.split(chr(10)):
     if line.lower().startswith('recordist:'):
         recordist = line.split(':', 1)[1].strip()
     elif line.lower().startswith('recorder:') or line.lower().startswith('equipment:'):
-        import re as _re
-        equipment = _re.sub(r'\s*\(fw[^)]*\)', '', line.split(':', 1)[1].strip())
+        equipment = re.sub(r'\s*\(fw[^)]*\)', '', line.split(':', 1)[1].strip())
     elif line.lower().startswith('microphone') or line.lower().startswith('mic'):
         raw = line.split(':', 1)[1].strip() if ':' in line else ''
         # May contain multiple mics separated by ';'
@@ -386,10 +384,7 @@ if mic_parts:
         rec_str = rec_str + ' + ' + mic_str
     elif mic_str:
         rec_str = mic_str
-if rec_str:
-    sh('IXML_RECORDER', rec_str)
-elif recordist:
-    sh('IXML_RECORDER', recordist)
+sh('IXML_RECORDER', rec_str or recordist)
 " "$input_file")"
 }
 
@@ -402,16 +397,14 @@ load_frm_metadata() {
     input_dir=$(dirname "$input_file")
     local frm_file="${input_dir}/session.frm.txt"
 
-    # Clear FRM variables
     FRM_TITLE="" FRM_RECORDER="" FRM_LOCATION="" FRM_COORDINATES=""
     FRM_DATETIME="" FRM_FOUND="n"
 
     [[ -f "$frm_file" ]] || return 0
-    FRM_FOUND="y"
 
-    # Parse with Python/YAML
     eval "$("$PYTHON" -c "
-import yaml, sys, os
+import yaml, sys, os, re
+from datetime import datetime as DT
 
 with open(sys.argv[1]) as f:
     doc = yaml.safe_load(f)
@@ -419,10 +412,14 @@ with open(sys.argv[1]) as f:
 if not isinstance(doc, dict):
     sys.exit(0)
 
+print(\"FRM_FOUND='y'\")
+
 def sh(name, val):
     if val:
-        # Shell-escape single quotes
-        val = str(val).replace(\"'\", \"'\\\"'\\\"'\")
+        val = str(val).strip()
+        if not val:
+            return
+        val = val.replace(\"'\", \"'\\\"'\\\"'\")
         print(f\"{name}='{val}'\")
 
 session = doc.get('session', {}) or {}
@@ -458,23 +455,18 @@ lon = loc.get('longitude')
 if lat is not None and lon is not None:
     sh('FRM_COORDINATES', f'{lat}, {lon}')
 
+def to_naive_iso(ts):
+    if isinstance(ts, DT):
+        return ts.strftime('%Y-%m-%dT%H:%M:%S')
+    s = re.sub(r'[+-]\d{2}:\d{2}$', '', str(ts))
+    return s.rstrip('Z')
+
 dt = doc.get('datetime', {}) or {}
 start = dt.get('start', '')
 if start:
-    # Convert to local naive ISO for display (strip offset)
-    s = str(start)
-    # datetime objects from YAML may already be parsed
-    from datetime import datetime as DT
-    if isinstance(start, DT):
-        s = start.strftime('%Y-%m-%dT%H:%M:%S')
-    else:
-        # Strip trailing timezone offset (+HH:MM or Z)
-        import re
-        s = re.sub(r'[+-]\d{2}:\d{2}$', '', s)
-        s = s.rstrip('Z')
-    sh('FRM_DATETIME', s)
+    sh('FRM_DATETIME', to_naive_iso(start))
 
-# Pass the input filename to check files[] for per-file start time
+# Per-file start time overrides session start
 basename = os.path.basename(sys.argv[2])
 files = doc.get('files', []) or []
 for fentry in files:
@@ -483,14 +475,7 @@ for fentry in files:
     if fentry.get('filename', '') == basename:
         fstart = fentry.get('start')
         if fstart:
-            from datetime import datetime as DT
-            if isinstance(fstart, DT):
-                s = fstart.strftime('%Y-%m-%dT%H:%M:%S')
-            else:
-                import re
-                s = re.sub(r'[+-]\d{2}:\d{2}$', '', str(fstart))
-                s = s.rstrip('Z')
-            sh('FRM_DATETIME', s)
+            sh('FRM_DATETIME', to_naive_iso(fstart))
         break
 " "$frm_file" "$input_file")"
 }
