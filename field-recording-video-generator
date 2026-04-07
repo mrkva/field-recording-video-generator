@@ -364,8 +364,8 @@ for line in user.split(chr(10)):
                 mic_parts.append(entry)
 
 # Clean mic entries: strip channel numbers (1), (2) and polar patterns
-_patterns = {'cardioid','supercardioid','hypercardioid','omnidirectional',
-             'omni','figure-8','figure8','bidirectional','shotgun'}
+_patterns = set(['cardioid','supercardioid','hypercardioid','omnidirectional',
+             'omni','figure-8','figure8','bidirectional','shotgun'])
 def clean_mic(s):
     import re
     s = re.sub(r'\s*\(\d+\)', '', s)  # strip (1), (2), etc.
