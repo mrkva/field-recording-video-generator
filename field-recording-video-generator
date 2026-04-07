@@ -296,6 +296,45 @@ sh('IXML_NOTE', note.split(chr(10))[0] if note else '')
 # Location — nested inside <LOCATION> parent
 loc_name = (root.findtext('LOCATION/LOCATION_NAME', '') or
             root.findtext('LOCATION_NAME', '') or '')
+# Shorten country names to ISO 3166-1 alpha-2 codes
+_countries = {
+    'afghanistan':'AF','albania':'AL','algeria':'DZ','argentina':'AR',
+    'armenia':'AM','australia':'AU','austria':'AT','azerbaijan':'AZ',
+    'belarus':'BY','belgium':'BE','bolivia':'BO','bosnia and herzegovina':'BA',
+    'brazil':'BR','bulgaria':'BG','cambodia':'KH','canada':'CA',
+    'chile':'CL','china':'CN','colombia':'CO','costa rica':'CR',
+    'croatia':'HR','cuba':'CU','cyprus':'CY','czech republic':'CZ',
+    'czechia':'CZ','denmark':'DK','ecuador':'EC','egypt':'EG',
+    'estonia':'EE','ethiopia':'ET','finland':'FI','france':'FR',
+    'georgia':'GE','germany':'DE','greece':'GR','guatemala':'GT',
+    'hungary':'HU','iceland':'IS','india':'IN','indonesia':'ID',
+    'iran':'IR','iraq':'IQ','ireland':'IE','israel':'IL','italy':'IT',
+    'japan':'JP','jordan':'JO','kazakhstan':'KZ','kenya':'KE',
+    'korea':'KR','south korea':'KR','north korea':'KP',
+    'kosovo':'XK','kuwait':'KW','kyrgyzstan':'KG','latvia':'LV',
+    'lebanon':'LB','libya':'LY','liechtenstein':'LI','lithuania':'LT',
+    'luxembourg':'LU','malaysia':'MY','malta':'MT','mexico':'MX',
+    'moldova':'MD','monaco':'MC','mongolia':'MN','montenegro':'ME',
+    'morocco':'MA','nepal':'NP','netherlands':'NL','new zealand':'NZ',
+    'nigeria':'NG','north macedonia':'MK','norway':'NO','oman':'OM',
+    'pakistan':'PK','panama':'PA','paraguay':'PY','peru':'PE',
+    'philippines':'PH','poland':'PL','portugal':'PT','qatar':'QA',
+    'romania':'RO','russia':'RU','saudi arabia':'SA','serbia':'RS',
+    'singapore':'SG','slovakia':'SK','slovenia':'SI','south africa':'ZA',
+    'spain':'ES','sri lanka':'LK','sweden':'SE','switzerland':'CH',
+    'taiwan':'TW','tajikistan':'TJ','tanzania':'TZ','thailand':'TH',
+    'tunisia':'TN','turkey':'TR','turkmenistan':'TM','ukraine':'UA',
+    'united arab emirates':'AE','united kingdom':'GB','uk':'GB',
+    'united states':'US','usa':'US','uruguay':'UY','uzbekistan':'UZ',
+    'venezuela':'VE','vietnam':'VN',
+}
+if loc_name:
+    parts = [p.strip() for p in loc_name.split(',')]
+    for i, p in enumerate(parts):
+        code = _countries.get(p.lower())
+        if code:
+            parts[i] = code
+    loc_name = ', '.join(parts)
 sh('IXML_LOCATION', loc_name)
 
 loc_gps = (root.findtext('LOCATION/LOCATION_GPS', '') or
@@ -320,15 +359,19 @@ for line in user.split(chr(10)):
 
 rec_str = equipment
 if mic_parts:
-    mics = ' + '.join(m for m in mic_parts if m)
-    if rec_str and mics:
-        rec_str = rec_str + ' + ' + mics
-    elif mics:
-        rec_str = mics
-if not rec_str and recordist:
-    rec_str = ''
-sh('IXML_RECORDER', rec_str)
-if not rec_str and recordist:
+    cleaned = [m for m in mic_parts if m]
+    unique = list(dict.fromkeys(cleaned))
+    if len(cleaned) > 1 and len(unique) == 1:
+        mic_str = unique[0] + (' (PAIR)' if len(cleaned) == 2 else f' (x{len(cleaned)})')
+    else:
+        mic_str = ' + '.join(unique)
+    if rec_str and mic_str:
+        rec_str = rec_str + ' + ' + mic_str
+    elif mic_str:
+        rec_str = mic_str
+if rec_str:
+    sh('IXML_RECORDER', rec_str)
+elif recordist:
     sh('IXML_RECORDER', recordist)
 " "$input_file")"
 }
@@ -373,12 +416,20 @@ recorder = equip.get('recorder', {}) or {}
 mics = equip.get('microphones', []) or []
 rec_model = recorder.get('model', '')
 mic_models = [m.get('model', '') for m in mics if m.get('model')]
-if rec_model and mic_models:
-    sh('FRM_RECORDER', rec_model + ' + ' + ' + '.join(dict.fromkeys(mic_models)))
+# Deduplicate: if all mics are the same model, show "Model (PAIR)" or "Model (x3)"
+unique_mics = list(dict.fromkeys(mic_models))
+if len(mic_models) > 1 and len(unique_mics) == 1:
+    mic_str = unique_mics[0] + (' (PAIR)' if len(mic_models) == 2 else f' (x{len(mic_models)})')
+elif unique_mics:
+    mic_str = ' + '.join(unique_mics)
+else:
+    mic_str = ''
+if rec_model and mic_str:
+    sh('FRM_RECORDER', rec_model + ' + ' + mic_str)
 elif rec_model:
     sh('FRM_RECORDER', rec_model)
-elif mic_models:
-    sh('FRM_RECORDER', ' + '.join(dict.fromkeys(mic_models)))
+elif mic_str:
+    sh('FRM_RECORDER', mic_str)
 
 loc = doc.get('location', {}) or {}
 parts = [loc.get('name', ''), loc.get('region', '')]
