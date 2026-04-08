@@ -4,7 +4,30 @@
 import argparse
 import re
 import os
+import unicodedata
 from PIL import Image, ImageDraw, ImageFont
+
+
+# Characters that don't decompose via NFKD normalization
+_SPECIAL_TRANSLIT = {
+    'ø': 'o', 'Ø': 'O', 'đ': 'd', 'Đ': 'D', 'ð': 'd', 'Ð': 'D',
+    'ł': 'l', 'Ł': 'L', 'ß': 'ss', 'æ': 'ae', 'Æ': 'AE',
+    'œ': 'oe', 'Œ': 'OE', 'þ': 'th', 'Þ': 'TH',
+}
+
+
+def transliterate(text):
+    """Strip diacritical marks so text renders with basic Latin fonts.
+
+    Š -> S, č -> c, ñ -> n, ü -> u, etc.
+    """
+    # Handle characters that don't decompose cleanly
+    for orig, repl in _SPECIAL_TRANSLIT.items():
+        if orig in text:
+            text = text.replace(orig, repl)
+    # NFD splits e.g. Š into S + combining caron; drop the combining marks
+    nfkd = unicodedata.normalize('NFKD', text)
+    return ''.join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def parse_datetime_from_filename(filename):
@@ -72,24 +95,24 @@ def render_info_panel(output_png, width, font_size,
     max_text_w = width - 2 * padding_x
     line_height = font.getbbox("AY")[3] - font.getbbox("AY")[1] + 2
 
-    # Build entries — all uppercase
+    # Build entries — all uppercase, transliterated for font compatibility
     # Label column is 7 chars wide (padded with spaces) for alignment
     label_width = 7
     entries = []
     if filename:
-        entries.append(("FILE", os.path.basename(filename).upper()))
+        entries.append(("FILE", transliterate(os.path.basename(filename)).upper()))
     if subject:
-        entries.append(("SUBJ", subject.upper()))
+        entries.append(("SUBJ", transliterate(subject).upper()))
     if datetime_str:
-        entries.append(("TIME", datetime_str.upper()))
+        entries.append(("TIME", transliterate(datetime_str).upper()))
     if location:
-        entries.append(("LOC", location.upper()))
+        entries.append(("LOC", transliterate(location).upper()))
     if recorder:
-        entries.append(("EQUIP", recorder.upper()))
+        entries.append(("EQUIP", transliterate(recorder).upper()))
     if sample_info:
-        entries.append(("SMPL", sample_info.upper()))
+        entries.append(("SMPL", transliterate(sample_info).upper()))
     if playback_speed and not playback_speed.upper().startswith("1X"):
-        entries.append(("SPEED", playback_speed.upper()))
+        entries.append(("SPEED", transliterate(playback_speed).upper()))
 
     if not entries:
         entries.append(("", ""))
