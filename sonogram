@@ -529,19 +529,22 @@ interactive_dialogue() {
     if [[ "$FRM_FOUND" == "y" ]]; then
         msg "${GREEN}Found session.frm.txt — metadata loaded${RESET}"
     fi
+
+    # ------------------------------------------------------------------
+    # 1. Recording metadata
+    # ------------------------------------------------------------------
     msg ""
+    msg "${BOLD}── Metadata ──${RESET}"
 
     # Date/time: BWF timecode > FRM file-specific start > FRM session start > filename > file stat
     local detected_datetime
     detected_datetime=$(parse_datetime "$input_file")
     local has_timecode="n"
     if [[ -n "$detected_datetime" && "$detected_datetime" == *T??:??:?? ]]; then
-        # Full datetime with time — BWF timecode present
         msg "${GREEN}Detected date/time: ${detected_datetime}${RESET}"
         META_DATETIME="$detected_datetime"
         has_timecode="y"
     elif [[ -n "$FRM_DATETIME" && "$FRM_DATETIME" == *T??:??:?? ]]; then
-        # FRM has full datetime with time
         msg "${GREEN}Date/time from session.frm.txt: ${FRM_DATETIME}${RESET}"
         META_DATETIME="$FRM_DATETIME"
         has_timecode="y"
@@ -558,7 +561,6 @@ interactive_dialogue() {
             META_DATETIME="$frm_date"
         fi
     elif [[ -n "$detected_datetime" ]]; then
-        # Have a date but time may be inaccurate (from filename/file stat)
         local detected_date="${detected_datetime%%T*}"
         msg "${GREEN}Detected date: ${detected_date}${RESET}"
         msg "${DIM}No embedded timecode found. Enter precise start time if known.${RESET}"
@@ -585,24 +587,48 @@ interactive_dialogue() {
     META_RECORDER=$(ask "Recorded with" "$def_recorder")
     META_LOCATION=$(ask "Location (optional, Enter to skip)" "$def_location")
     if [[ -n "$META_LOCATION" ]]; then
-        META_COORDINATES=$(ask "Location coordinates for map (lat,lon, Enter to skip)" "$def_coordinates")
+        META_COORDINATES=$(ask "Coordinates for map (lat,lon, Enter to skip)" "$def_coordinates")
     else
         META_COORDINATES=""
     fi
 
+    # ------------------------------------------------------------------
+    # 2. Audio processing
+    # ------------------------------------------------------------------
     msg ""
-    local nyquist=$((AUDIO_SAMPLE_RATE / 2))
-    msg "${DIM}Spectrogram frequency range (Hz). Nyquist: ${nyquist} Hz${RESET}"
-    FREQ_MIN=$(ask "Freq min (Hz)" "20")
-    FREQ_MAX=$(ask "Freq max (Hz)" "$nyquist")
+    msg "${BOLD}── Audio ──${RESET}"
 
-    msg ""
     msg "${DIM}Playback speed: reinterpret sample rate for ultrasonic content.${RESET}"
     msg "${DIM}Format: SOURCE:TARGET (e.g. 192000:44100) or divisor (e.g. 4.35)${RESET}"
-    msg "${DIM}Press Enter for normal speed (1x).${RESET}"
     PLAYBACK_SPEED_INPUT=$(ask "Playback speed" "1x")
+    NORMALIZE_AUDIO=$(ask "Normalize audio to -16 LUFS? (y/n)" "y")
 
+    # ------------------------------------------------------------------
+    # 3. Spectrogram
+    # ------------------------------------------------------------------
     msg ""
+    msg "${BOLD}── Spectrogram ──${RESET}"
+
+    local nyquist=$((AUDIO_SAMPLE_RATE / 2))
+    msg "${DIM}Nyquist: ${nyquist} Hz${RESET}"
+    FREQ_MIN=$(ask "Freq min (Hz)" "20")
+    FREQ_MAX=$(ask "Freq max (Hz)" "$nyquist")
+    FFT_WINDOW=$(ask "FFT window size (512 / 1024 / 2048 / 4096 / 8192)" "2048")
+
+    msg "${DIM}Pixels per second of audio. Higher = more detail, wider image.${RESET}"
+    msg "${DIM}50-100: long ambient | 200: general | 400-800: bird calls${RESET}"
+    SPEC_PPS=$(ask "Detail (pixels/sec)" "200")
+
+    msg "${DIM}Lower = more contrast. 40-60: detailed patterns | 90: wide dynamic range${RESET}"
+    DYNAMIC_RANGE=$(ask "Dynamic range (dB)" "55")
+    FREQ_GRID=$(ask "Frequency grid overlay? (y/n)" "y")
+
+    # ------------------------------------------------------------------
+    # 4. Output
+    # ------------------------------------------------------------------
+    msg ""
+    msg "${BOLD}── Output ──${RESET}"
+
     PRESET=$(ask "Preset (ig_reel / reel / square / landscape)" "ig_reel")
     if [[ ! -f "${PRESETS_DIR}/${PRESET}.conf" ]]; then
         msg "${YELLOW}Unknown preset '${PRESET}', defaulting to ig_reel.${RESET}"
@@ -615,28 +641,13 @@ interactive_dialogue() {
         PHOTO_PATH=""
     fi
 
-    FREQ_GRID="n"
-    FFT_WINDOW=$(ask "FFT window size (e.g. 512, 1024, 2048, 4096, 8192)" "2048")
-
-    msg ""
-    msg "${DIM}Spectrogram detail: pixels per second of audio. Higher = more detail, wider image.${RESET}"
-    msg "${DIM}Try 50-100 for long ambient, 200 (default) for general, 400-800 for bird calls.${RESET}"
-    SPEC_PPS=$(ask "Spectrogram detail (pixels/sec)" "200")
-
-    msg ""
-    msg "${DIM}Dynamic range controls spectrogram contrast. Lower = more contrast.${RESET}"
-    msg "${DIM}Try 40-60 for detailed patterns, 90 for wide dynamic range.${RESET}"
-    DYNAMIC_RANGE=$(ask "Dynamic range (dB)" "55")
-
-    NORMALIZE_AUDIO=$(ask "Normalize audio to -16 LUFS? (y/n)" "y")
     if [[ "$has_timecode" == "y" ]]; then
         SHOW_TIMECODE="y"
-        msg "${DIM}Running timecode: enabled (BWF timecode detected)${RESET}"
+        msg "${DIM}Running timecode: enabled (embedded timecode detected)${RESET}"
     else
         SHOW_TIMECODE=$(ask "Show running timecode? (y/n)" "n")
     fi
 
-    # Output filename
     local default_output="${input_file%.*}_video.mp4"
     OUTPUT_FILE=$(ask "Output filename" "$default_output")
 
@@ -1089,7 +1100,7 @@ quick_defaults() {
     PLAYBACK_SPEED_INPUT="1x"
     PRESET="ig_reel"
     PHOTO_PATH=""
-    FREQ_GRID="n"
+    FREQ_GRID="y"
     FFT_WINDOW="2048"
     SPEC_PPS="200"
     DYNAMIC_RANGE="55"

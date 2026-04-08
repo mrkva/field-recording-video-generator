@@ -69,25 +69,63 @@ sudo ln -sf "$(pwd)/sonogram" /usr/local/bin/sonogram
 Drop a WAV file on the page, fill in the metadata, and hit Generate. Progress
 updates stream in real-time. Works from any browser on any OS.
 
+### Automatic metadata detection
+
+Sonogram reads metadata from several sources (in priority order) and
+pre-fills the interactive prompts so you usually just press Enter:
+
+| Source | What it provides |
+|---|---|
+| **iXML chunk** (in WAV) | Scene/note (subject), location name, GPS coordinates, recorder + microphone models |
+| **BWF tags** (in WAV) | Origination date/time, `time_reference` for accurate timecode, `encoded_by` for equipment |
+| **session.frm.txt** sidecar | Session title, equipment, location, coordinates, per-file start times |
+| **Filename** | Date/time parsed from patterns like `2024-03-15T14_30_22` or `20240315_143022` |
+| **File timestamps** | Creation/modification time as a last resort |
+
+If your recorder embeds iXML (e.g. Sound Devices, Zoom F-series, Tascam
+recorders with metadata enabled), sonogram will extract the scene name,
+location, GPS coordinates, and equipment details automatically. Paired
+microphones are detected and shown as e.g. `DPA 4006A (PAIR)`.
+
 ### Interactive prompts (CLI)
 
-The CLI walks you through an interactive dialogue:
+The CLI walks you through an interactive dialogue, grouped by concern:
+
+**Metadata** — auto-populated from iXML / BWF / sidecar when available
 
 | Prompt | Default | Description |
 |---|---|---|
-| Date/time | auto-detected from filename or file metadata | ISO format, e.g. `2024-03-15T14:30:22` |
-| Recorded subject | -- | What was recorded |
-| Recorded with | -- | Equipment used |
-| Location | *(optional)* | Recording location name |
-| Coordinates | *(optional, if location set)* | `lat,lon` for the map widget |
+| Date/time | auto-detected | ISO format, e.g. `2024-03-15T14:30:22` |
+| Recorded subject | from iXML scene/note | What was recorded |
+| Recorded with | from iXML/BWF | Equipment used |
+| Location | from iXML | Recording location name |
+| Coordinates | from iXML GPS | `lat,lon` for the map widget |
+
+**Audio**
+
+| Prompt | Default | Description |
+|---|---|---|
+| Playback speed | `1x` | `SOURCE:TARGET` (e.g. `192000:44100`) or divisor |
+| Normalize audio | `y` | Flat volume gain to -16 LUFS |
+
+**Spectrogram**
+
+| Prompt | Default | Description |
+|---|---|---|
 | Freq min (Hz) | `20` | Spectrogram lower bound |
 | Freq max (Hz) | Nyquist | Spectrogram upper bound |
-| Playback speed | 1x | `SOURCE:TARGET` (e.g. `192000:44100`) or divisor |
-| Preset | `square` | `square` (1080x1080) or `reel` (1080x1920) |
-| Photo | *(optional)* | Path to a photo to embed in the video |
-| Frequency grid | `y` | Draw grid lines on the spectrogram |
 | FFT window size | `2048` | STFT window (e.g. `512`, `1024`, `4096`, `8192`) |
-| Normalize audio | `y` | Two-pass loudnorm to -16 LUFS |
+| Detail (px/sec) | `200` | Pixels per second of audio; higher = more detail |
+| Dynamic range (dB) | `55` | Lower = more contrast |
+| Frequency grid | `y` | Draw grid lines on the spectrogram |
+
+**Output**
+
+| Prompt | Default | Description |
+|---|---|---|
+| Preset | `ig_reel` | `ig_reel` / `reel` / `square` / `landscape` |
+| Photo | *(optional)* | Path to a photo to embed in the video |
+| Timecode | auto if BWF | Running timecode overlay in info panel |
 | Output file | `{input}_video.mp4` | Output path |
 
 ### Playback speed
@@ -115,15 +153,17 @@ and frequency resolution:
 ## How it works
 
 1. **Probe** the input WAV for sample rate, bit depth, channels, duration, and codec
-2. **Prepare audio** -- optionally reinterpret sample rate for ultrasonic
+2. **Read metadata** -- extract iXML chunk, BWF tags, and `session.frm.txt`
+   sidecar for subject, location, GPS, equipment, and timestamps
+3. **Prepare audio** -- optionally reinterpret sample rate for ultrasonic
    recordings (`asetrate` + `aresample`), then normalize loudness with a
-   two-pass `loudnorm` filter
-3. **Generate spectrogram** -- compute STFT in 30-second chunks (for memory
+   flat volume gain to -16 LUFS
+4. **Generate spectrogram** -- compute STFT in 30-second chunks (for memory
    efficiency), apply colormap, and write a wide PNG strip
-4. **Render overlays** -- info panel, frequency scale, cursor image, and
+5. **Render overlays** -- info panel, frequency scale, cursor image, and
    optional map widget (fetched from OpenStreetMap tiles with a retro
    dark/inverted filter)
-5. **Compose video** -- ffmpeg scrolls (crops) across the spectrogram strip,
+6. **Compose video** -- ffmpeg scrolls (crops) across the spectrogram strip,
    overlays the cursor and frequency scale, and stacks the info panel on top
 
 ## Presets
@@ -132,8 +172,10 @@ Presets live in `presets/` and set video dimensions, font size, and frame rate:
 
 | Preset | Resolution | Use case |
 |--------|-----------|----------|
+| `ig_reel` | 1080x1920 | Instagram/TikTok reel with safe zones (default) |
+| `reel` | 1080x1920 | Vertical, full-bleed |
 | `square` | 1080x1080 | Instagram post, general use |
-| `reel` | 1080x1920 | Instagram/TikTok reel, vertical stories |
+| `landscape` | 1920x1080 | YouTube, desktop |
 
 ## Output
 
