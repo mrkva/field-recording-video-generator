@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # ============================================================================
-# field-recording-video-generator
+# sonogram
 #
-# Generate a video from a WAV field recording with scrolling logarithmic
+# Generate a video from a WAV audio recording with scrolling logarithmic
 # spectrogram, playback cursor, metadata overlay, and optional photo.
 # ============================================================================
 
@@ -58,9 +58,9 @@ check_dependencies() {
 # ============================================================================
 usage() {
     cat <<'EOF'
-Usage: field-recording-video-generator [options] <input.wav>
+Usage: sonogram [options] <input.wav>
 
-Generate a video from a WAV field recording with scrolling spectrogram,
+Generate a video from a WAV audio recording with scrolling spectrogram,
 playback cursor, and metadata overlay.
 
 The program will interactively ask for metadata and settings.
@@ -518,7 +518,7 @@ interactive_dialogue() {
 
     msg ""
     msg "${BOLD}╔══════════════════════════════════════════════════════╗${RESET}"
-    msg "${BOLD}║       FIELD RECORDING VIDEO GENERATOR                ║${RESET}"
+    msg "${BOLD}║       SONOGRAM                                       ║${RESET}"
     msg "${BOLD}╚══════════════════════════════════════════════════════╝${RESET}"
     msg ""
     msg "${DIM}File: ${RESET}${BOLD}${basename}${RESET}"

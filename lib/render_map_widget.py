@@ -41,7 +41,7 @@ def fetch_tiles(lat, lon, zoom=13):
         for dy in range(-1, 2):
             url = f'https://tile.openstreetmap.org/{zoom}/{tx + dx}/{ty + dy}.png'
             req = urllib.request.Request(url, headers={
-                'User-Agent': 'field-recording-video-generator/1.0'
+                'User-Agent': 'sonogram/1.0'
             })
             try:
                 data = urllib.request.urlopen(req, timeout=8).read()

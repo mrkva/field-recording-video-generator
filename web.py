@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Web interface for field-recording-video-generator.
+Web interface for sonogram.
 Wraps the existing shell script pipeline with a drag-and-drop UI.
 
 Usage:
@@ -521,7 +521,7 @@ def download(job_id):
         return jsonify({"error": "Not ready"}), 400
 
     return send_file(job["output_file"], as_attachment=True,
-                     download_name="field_recording_video.mp4")
+                     download_name="sonogram_video.mp4")
 
 
 # ---------------------------------------------------------------------------
@@ -529,7 +529,7 @@ def download(job_id):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Web UI for field-recording-video-generator")
+    parser = argparse.ArgumentParser(description="Web UI for sonogram")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=5000, help="Port (default: 5000)")
     parser.add_argument("--debug", action="store_true", help="Enable Flask debug mode")
@@ -538,7 +538,7 @@ if __name__ == "__main__":
     UPLOAD_DIR.mkdir(exist_ok=True)
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    print(f"\n  Field Recording Video Generator — Web UI")
+    print(f"\n  Sonogram — Web UI")
     print(f"  http://{args.host}:{args.port}\n")
 
     app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)

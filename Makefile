@@ -6,10 +6,10 @@ VENV_DIR := $(CURDIR)/.venv
 install: $(VENV_DIR)
 	@echo ""
 	@echo "  Installed. Run with:"
-	@echo "    $(CURDIR)/field-recording-video-generator <file.wav>"
+	@echo "    $(CURDIR)/sonogram <file.wav>"
 	@echo ""
 	@echo "  Or symlink to PATH:"
-	@echo "    sudo ln -sf $(CURDIR)/field-recording-video-generator $(PREFIX)/field-recording-video-generator"
+	@echo "    sudo ln -sf $(CURDIR)/sonogram $(PREFIX)/sonogram"
 	@echo ""
 
 $(VENV_DIR): requirements.txt
@@ -20,7 +20,7 @@ $(VENV_DIR): requirements.txt
 	@touch $(VENV_DIR)
 
 uninstall:
-	rm -f $(PREFIX)/field-recording-video-generator
+	rm -f $(PREFIX)/sonogram
 
 clean:
 	rm -rf $(VENV_DIR)

@@ -1,4 +1,4 @@
-# field-recording-video-generator — Plugin Integration Spec
+# sonogram — Plugin Integration Spec
 
 ## What it does
 
@@ -16,7 +16,7 @@ Generates a video from a WAV audio file (field recording). The output video cont
 ## Architecture
 
 ### Entry point
-`field-recording-video-generator` — Bash script. Orchestrates a 6-stage pipeline:
+`sonogram` — Bash script. Orchestrates a 6-stage pipeline:
 
 1. **Audio probe** — `ffprobe` extracts sample rate, channels, bit depth, duration, BWF metadata (`creation_time`, `time_reference`, `encoded_by`). `time_reference` is preferred for timecode as it reflects trimmed file positions.
 2. **Info panel render** — Python (`lib/render_info_panel.py`) generates a PNG with metadata fields. Returns panel height, timecode position, scroll field data, map overlay position. Detects values exceeding 32 characters and marks them for scrolling.

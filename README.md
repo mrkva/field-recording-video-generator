@@ -1,6 +1,6 @@
-# field-recording-video-generator
+# sonogram
 
-A shell script that turns a WAV field recording into a video with a scrolling
+A shell script that turns a WAV audio recording into a video with a scrolling
 linear spectrogram, metadata overlay, and playback cursor. The visual style is
 inspired by NASA telemetry displays and industrial camera footage.
 
@@ -36,9 +36,9 @@ sudo pacman -S ffmpeg sox python
 ### Clone and run
 
 ```bash
-git clone https://github.com/mrkva/field-recording-video-generator.git
-cd field-recording-video-generator
-./field-recording-video-generator recording.wav
+git clone https://github.com/mrkva/sonogram.git
+cd sonogram
+./sonogram recording.wav
 ```
 
 Python packages (numpy, scipy, matplotlib, Pillow) are installed automatically
@@ -47,7 +47,7 @@ into a local `.venv/` on first run. No system-wide pip installs needed.
 To add to your PATH:
 
 ```bash
-sudo ln -sf "$(pwd)/field-recording-video-generator" /usr/local/bin/field-recording-video-generator
+sudo ln -sf "$(pwd)/sonogram" /usr/local/bin/sonogram
 ```
 
 ## Usage
@@ -55,7 +55,7 @@ sudo ln -sf "$(pwd)/field-recording-video-generator" /usr/local/bin/field-record
 ### Command line
 
 ```bash
-./field-recording-video-generator recording.wav
+./sonogram recording.wav
 ```
 
 ### Web interface
@@ -144,7 +144,7 @@ Presets live in `presets/` and set video dimensions, font size, and frame rate:
 ## Project structure
 
 ```
-field-recording-video-generator   # main shell script (CLI)
+sonogram                          # main shell script (CLI)
 web.py                            # web interface (Flask)
 templates/index.html              # web UI
 lib/
