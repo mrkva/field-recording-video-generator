@@ -143,6 +143,10 @@ def render_info_panel(output_png, width, font_size,
     # Character width for monospace font
     char_w = font.getlength("X")
 
+    # Cap max_value_chars to what actually fits in the available pixel width
+    fits = int(max_value_w / char_w) if char_w > 0 else max_value_chars
+    max_value_chars = min(max_value_chars, fits)
+
     # Check which values overflow and need scrolling
     scroll_fields = []  # list of (label, y_pos, full_text, strip_png) — filled during rendering
     all_lines = []  # list of (label, value_text, needs_scroll)

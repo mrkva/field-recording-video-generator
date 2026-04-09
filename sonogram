@@ -967,9 +967,9 @@ font_size = sys.argv[7]
 dt_in = sys.argv[8]
 dt_idx = int(sys.argv[9])
 
-# Build looping text with bullet delimiter
-loop_text = text + ' \u2022 ' + text
-cycle_len = len(text) + 3  # text + ' \u2022 '
+# Build looping text with dash delimiter
+loop_text = text + ' - ' + text
+cycle_len = len(text) + 3  # text + ' - '
 
 filters = ''
 for pos in range(cycle_len):
