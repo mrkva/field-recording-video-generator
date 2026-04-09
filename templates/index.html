@@ -372,6 +372,12 @@ document.querySelectorAll('.toggle').forEach(el => {
   });
 });
 
+// -- Method ↔ FFT window default --
+$('specMethod').addEventListener('change', () => {
+  const fftSel = $('fftWindow');
+  fftSel.value = $('specMethod').value === 'reassigned' ? '1024' : '2048';
+});
+
 // -- Dropzone --
 const dropzone = $('dropzone');
 const fileInput = $('fileInput');

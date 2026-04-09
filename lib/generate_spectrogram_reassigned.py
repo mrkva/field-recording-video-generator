@@ -238,16 +238,17 @@ def generate_reassigned_spectrogram(input_wav, output_png, width, height,
         else:
             step = 50
 
+        tick_len = max(6, width // 80)  # short tick marks from left edge
         f_val = step
         while f_val < f_hi:
             if f_val > f_lo:
                 frac = (f_val - f_lo) / (f_hi - f_lo + 1e-10)
                 y = int((1.0 - frac) * height)
                 y = max(0, min(height - 1, y))
-                blend = 0.12
-                row = img_arr[y].astype(np.float32)
+                blend = 0.35
+                row = img_arr[y, :tick_len].astype(np.float32)
                 grid_color = np.array([180, 220, 180], dtype=np.float32)
-                img_arr[y] = (row * (1 - blend) + grid_color * blend).astype(np.uint8)
+                img_arr[y, :tick_len] = (row * (1 - blend) + grid_color * blend).astype(np.uint8)
             f_val += step
 
         img = Image.fromarray(img_arr)

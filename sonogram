@@ -619,11 +619,16 @@ interactive_dialogue() {
     msg "${DIM}standard: classic STFT | reassigned: sharper ridges (3x slower)${RESET}"
     SPEC_METHOD=$(ask "Method (standard / reassigned)" "standard")
 
+    local fft_default="2048"
+    if [[ "$SPEC_METHOD" == "reassigned" ]]; then
+        fft_default="1024"
+    fi
+
     local nyquist=$((AUDIO_SAMPLE_RATE / 2))
     msg "${DIM}Nyquist: ${nyquist} Hz${RESET}"
     FREQ_MIN=$(ask "Freq min (Hz)" "20")
     FREQ_MAX=$(ask "Freq max (Hz)" "$nyquist")
-    FFT_WINDOW=$(ask "FFT window size (512 / 1024 / 2048 / 4096 / 8192)" "2048")
+    FFT_WINDOW=$(ask "FFT window size (512 / 1024 / 2048 / 4096 / 8192)" "$fft_default")
 
     msg "${DIM}Pixels per second of audio. Higher = more detail, wider image.${RESET}"
     msg "${DIM}50-100: long ambient | 200: general | 400-800: bird calls${RESET}"
