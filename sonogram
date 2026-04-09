@@ -1157,6 +1157,17 @@ main() {
         interactive_dialogue "$input_file"
     fi
 
+    # Check for existing output file
+    if [[ -f "$OUTPUT_FILE" ]]; then
+        echo -e "${YELLOW}Output file already exists: ${OUTPUT_FILE}${RESET}" >&2
+        local overwrite
+        overwrite=$(ask "Overwrite? (y/n)" "n")
+        if [[ "$overwrite" != "y" && "$overwrite" != "Y" && "$overwrite" != "yes" ]]; then
+            echo -e "${RED}Aborted.${RESET}" >&2
+            exit 1
+        fi
+    fi
+
     # Parse playback speed
     parse_playback_speed "$PLAYBACK_SPEED_INPUT" "$AUDIO_SAMPLE_RATE"
 
