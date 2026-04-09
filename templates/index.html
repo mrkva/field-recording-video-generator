@@ -295,6 +295,13 @@
       </div>
       <div class="field-row" style="margin-top: 8px;">
         <div class="field">
+          <label>Method</label>
+          <select id="specMethod">
+            <option value="standard" selected>Standard</option>
+            <option value="reassigned">Reassigned (sharper, slower)</option>
+          </select>
+        </div>
+        <div class="field">
           <label>FFT Window</label>
           <select id="fftWindow">
             <option value="512">512</option>
@@ -304,14 +311,8 @@
             <option value="8192">8192</option>
           </select>
         </div>
-        <div class="field">
-          <label>Method</label>
-          <select id="specMethod">
-            <option value="standard" selected>Standard</option>
-            <option value="reassigned">Reassigned (sharper, slower)</option>
-          </select>
-        </div>
       </div>
+      <div id="fftHint" style="margin-top: 4px; margin-left: 132px; font-size: 11px; color: var(--dim);"></div>
       <div class="field-row" style="margin-top: 8px;">
         <div class="field">
           <label>Preset</label>
@@ -372,11 +373,23 @@ document.querySelectorAll('.toggle').forEach(el => {
   });
 });
 
-// -- Method ↔ FFT window default --
+// -- Method ↔ FFT window default + hint --
+const fftHints = {
+  standard: '1024: birdsong | 2048: general | 4096+: tonal, slow',
+  reassigned: 'Recovers freq detail from smaller windows. 512: birdsong | 1024: general | 2048: tonal',
+};
+const fftDefaults = { standard: '2048', reassigned: '512' };
+
+function updateFftHint() {
+  $('fftHint').textContent = fftHints[$('specMethod').value] || '';
+}
+
 $('specMethod').addEventListener('change', () => {
-  const fftSel = $('fftWindow');
-  fftSel.value = $('specMethod').value === 'reassigned' ? '1024' : '2048';
+  $('fftWindow').value = fftDefaults[$('specMethod').value];
+  updateFftHint();
 });
+
+updateFftHint();
 
 // -- Dropzone --
 const dropzone = $('dropzone');
