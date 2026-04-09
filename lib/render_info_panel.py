@@ -19,7 +19,8 @@ _SPECIAL_TRANSLIT = {
 def transliterate(text):
     """Strip diacritical marks so text renders with basic Latin fonts.
 
-    Š -> S, č -> c, ñ -> n, ü -> u, etc.
+    Š -> S, č -> c, ñ -> n, ü -> u, etc.  Any character that still isn't
+    printable ASCII after decomposition is silently dropped.
     """
     # Handle characters that don't decompose cleanly
     for orig, repl in _SPECIAL_TRANSLIT.items():
@@ -27,7 +28,10 @@ def transliterate(text):
             text = text.replace(orig, repl)
     # NFD splits e.g. Š into S + combining caron; drop the combining marks
     nfkd = unicodedata.normalize('NFKD', text)
-    return ''.join(c for c in nfkd if not unicodedata.combining(c))
+    stripped = ''.join(c for c in nfkd if not unicodedata.combining(c))
+    # Final safety net: keep only printable ASCII (0x20–0x7E).
+    # Catches U+FFFD from bad UTF-8 decoding, and any other survivors.
+    return ''.join(c for c in stripped if 0x20 <= ord(c) <= 0x7E)
 
 
 def parse_datetime_from_filename(filename):

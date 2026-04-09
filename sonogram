@@ -257,8 +257,15 @@ def read_ixml(filepath):
             chunk_size = struct.unpack('<I', chunk_hdr[4:8])[0]
             if chunk_id == b'iXML':
                 data = f.read(chunk_size)
-                # Strip null bytes and BOM
-                return data.split(b'\x00')[0].decode('utf-8', errors='replace').lstrip('\ufeff')
+                raw = data.split(b'\x00')[0]
+                # Try UTF-8 first, fall back to Windows-1250 (Central/
+                # Eastern European recorders), then ISO-8859-1 (never fails).
+                for enc in ('utf-8', 'windows-1250', 'iso-8859-1'):
+                    try:
+                        return raw.decode(enc).lstrip('\ufeff')
+                    except (UnicodeDecodeError, ValueError):
+                        continue
+                return raw.decode('utf-8', errors='replace').lstrip('\ufeff')
             else:
                 # Skip chunk (pad to even boundary)
                 f.seek(chunk_size + (chunk_size % 2), 1)
