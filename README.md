@@ -11,11 +11,13 @@ inspired by NASA telemetry displays and industrial camera footage.
 ## What it produces
 
 - Scrolling linear spectrogram with configurable FFT window and frequency range
+- Two spectrogram methods: standard STFT and reassigned (sharper harmonic ridges)
 - Info panel with recording metadata (file, subject, date, location, equipment, sample info, playback speed)
 - Optional retro monochrome map widget showing recording coordinates
 - Green glow playback cursor
-- Optional frequency grid overlay
+- Optional frequency tick marks on the spectrogram edge
 - Optional photo band
+- Overwrite protection — prompts before replacing existing output files
 - 60 fps output at 1080x1080 (square) or 1080x1920 (reel)
 
 ## Install
@@ -66,8 +68,9 @@ sudo ln -sf "$(pwd)/sonogram" /usr/local/bin/sonogram
 ./web.py --host 0.0.0.0   # listen on all interfaces
 ```
 
-Drop a WAV file on the page, fill in the metadata, and hit Generate. Progress
-updates stream in real-time. Works from any browser on any OS.
+Drop a WAV file on the page, fill in the metadata, choose your spectrogram
+method and FFT window, and hit Generate. Progress updates stream in real-time.
+Works from any browser on any OS.
 
 ### Automatic metadata detection
 
@@ -86,6 +89,10 @@ If your recorder embeds iXML (e.g. Sound Devices, Zoom F-series, Tascam
 recorders with metadata enabled), sonogram will extract the scene name,
 location, GPS coordinates, and equipment details automatically. Paired
 microphones are detected and shown as e.g. `DPA 4006A (PAIR)`.
+
+Diacritical characters in metadata (Š, č, ñ, ü, etc.) are automatically
+transliterated to basic ASCII for reliable rendering with the monospace
+overlay font.
 
 ### Interactive prompts (CLI)
 
@@ -112,12 +119,13 @@ The CLI walks you through an interactive dialogue, grouped by concern:
 
 | Prompt | Default | Description |
 |---|---|---|
+| Method | `standard` | `standard` (classic STFT) or `reassigned` (sharper ridges, slower) |
 | Freq min (Hz) | `20` | Spectrogram lower bound |
 | Freq max (Hz) | Nyquist | Spectrogram upper bound |
-| FFT window size | `2048` | STFT window (e.g. `512`, `1024`, `4096`, `8192`) |
+| FFT window size | varies | Depends on method — see [FFT window size](#fft-window-size) |
 | Detail (px/sec) | `200` | Pixels per second of audio; higher = more detail |
 | Dynamic range (dB) | `55` | Lower = more contrast |
-| Frequency grid | `y` | Draw grid lines on the spectrogram |
+| Frequency grid | `y` | Draw tick marks on the spectrogram edge |
 
 **Output**
 
@@ -139,16 +147,42 @@ Formats:
 - `4.35` -- slow by a factor of 4.35
 - `1x` -- normal speed (default)
 
+### Spectrogram method
+
+Two methods are available for spectrogram generation:
+
+- **Standard** — classic Short-Time Fourier Transform. Reliable, fast, good
+  for all content types. The window size directly controls the trade-off
+  between time and frequency resolution.
+- **Reassigned** — computes three STFTs per frame to estimate instantaneous
+  frequency and group delay, then shifts energy to its true time-frequency
+  position. Produces much sharper harmonic ridges and tighter chirp lines,
+  especially at smaller FFT windows. About 3x slower than standard.
+
+Reassignment is most effective on tonal and harmonic content (birdsong,
+musical instruments, bat echolocation). For broadband noise (rain, wind,
+surf), the standard method may look better.
+
 ### FFT window size
 
-The spectrogram is computed using a Short-Time Fourier Transform with a Hann
-window and 87.5% overlap. The window size controls the trade-off between time
-and frequency resolution:
+Both methods use a Hann window with 87.5% overlap. The window size controls
+the trade-off between time and frequency resolution:
 
-- **Smaller windows** (512, 1024) -- better time resolution, good for
-  transient-heavy recordings (clicks, impacts, birdsong)
-- **Larger windows** (4096, 8192) -- better frequency resolution, good for
+- **Smaller windows** (512, 1024) — better time resolution, good for fast
+  trills, clicks, and transients
+- **Larger windows** (4096, 8192) — better frequency resolution, good for
   tonal content (drones, engines, sustained notes)
+
+The reassigned method recovers frequency detail from smaller windows, so you
+can use a small window for time resolution without losing frequency sharpness.
+
+Recommended defaults:
+
+| Content | Standard | Reassigned |
+|---|---|---|
+| Birdsong, fast trills | 1024 | 512 |
+| General / mixed | 2048 | 1024 |
+| Tonal, slow-evolving | 4096 | 2048 |
 
 ## How it works
 
@@ -158,8 +192,8 @@ and frequency resolution:
 3. **Prepare audio** -- optionally reinterpret sample rate for ultrasonic
    recordings (`asetrate` + `aresample`), then normalize loudness with a
    flat volume gain to -16 LUFS
-4. **Generate spectrogram** -- compute STFT in 30-second chunks (for memory
-   efficiency), apply colormap, and write a wide PNG strip
+4. **Generate spectrogram** -- compute STFT (or reassigned STFT) in 30-second
+   chunks (for memory efficiency), apply colormap, and write a wide PNG strip
 5. **Render overlays** -- info panel, frequency scale, cursor image, and
    optional map widget (fetched from OpenStreetMap tiles with a retro
    dark/inverted filter)
@@ -186,17 +220,23 @@ Presets live in `presets/` and set video dimensions, font size, and frame rate:
 ## Project structure
 
 ```
-sonogram                          # main shell script (CLI)
-web.py                            # web interface (Flask)
-templates/index.html              # web UI
+sonogram                              # main shell script (CLI)
+web.py                                # web interface (Flask)
+templates/index.html                  # web UI
 lib/
-  generate_spectrogram.py         # STFT + spectrogram image
-  render_info_panel.py            # metadata overlay panel
-  render_freq_scale.py            # frequency scale on left edge
-  render_map_widget.py            # OSM-based retro map widget
+  generate_spectrogram.py             # standard STFT spectrogram
+  generate_spectrogram_reassigned.py  # reassigned spectrogram
+  render_info_panel.py                # metadata overlay panel
+  render_freq_scale.py                # frequency scale on left edge
+  render_map_widget.py                # OSM-based retro map widget
+  render_map_animation.py             # animated map zoom sequence
+  render_hud_overlay.py               # HUD overlay graphics
+  render_timecode.py                  # running timecode overlay
 presets/
-  square.conf
+  ig_reel.conf
   reel.conf
+  square.conf
+  landscape.conf
 requirements.txt
 ```
 
