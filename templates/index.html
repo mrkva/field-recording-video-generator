@@ -335,10 +335,6 @@
     <div class="form-section">
       <h2>Options</h2>
       <div class="toggle-field">
-        <label>Freq Grid</label>
-        <div class="toggle on" id="toggleGrid" data-value="y"></div>
-      </div>
-      <div class="toggle-field">
         <label>Normalize</label>
         <div class="toggle on" id="toggleNormalize" data-value="y"></div>
       </div>
@@ -480,7 +476,6 @@ $('settingsForm').addEventListener('submit', async e => {
     spec_method: $('specMethod').value,
     preset: $('preset').value,
     playback_speed: $('playbackSpeed').value,
-    grid: $('toggleGrid').dataset.value,
     normalize: $('toggleNormalize').dataset.value,
   };
 

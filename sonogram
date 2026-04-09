@@ -642,7 +642,6 @@ interactive_dialogue() {
 
     msg "${DIM}Lower = more contrast. 40-60: detailed patterns | 90: wide dynamic range${RESET}"
     DYNAMIC_RANGE=$(ask "Dynamic range (dB)" "55")
-    FREQ_GRID=$(ask "Frequency grid overlay? (y/n)" "y")
 
     # ------------------------------------------------------------------
     # 4. Output
@@ -1121,7 +1120,6 @@ quick_defaults() {
     PLAYBACK_SPEED_INPUT="1x"
     PRESET="ig_reel"
     PHOTO_PATH=""
-    FREQ_GRID="y"
     FFT_WINDOW="2048"
     SPEC_METHOD="standard"
     SPEC_PPS="200"
@@ -1270,11 +1268,6 @@ main() {
     local spec_total_w
     spec_total_w=$(calc_spec_dimensions "$effective_duration" "$VIDEO_WIDTH" "$SPEC_PPS")
 
-    local grid_flag=""
-    if [[ "$FREQ_GRID" == "y" || "$FREQ_GRID" == "Y" || "$FREQ_GRID" == "yes" ]]; then
-        grid_flag="--grid"
-    fi
-
     local spec_script="generate_spectrogram.py"
     if [[ "$SPEC_METHOD" == "reassigned" ]]; then
         spec_script="generate_spectrogram_reassigned.py"
@@ -1292,7 +1285,6 @@ main() {
         --freq-min "$FREQ_MIN" \
         --freq-max "$FREQ_MAX" \
         --original-sr "$AUDIO_SAMPLE_RATE" \
-        $grid_flag \
         --fft-window "$FFT_WINDOW" \
         --dynamic-range "$DYNAMIC_RANGE"
 

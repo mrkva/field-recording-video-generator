@@ -125,7 +125,6 @@ The CLI walks you through an interactive dialogue, grouped by concern:
 | FFT window size | varies | Depends on method — see [FFT window size](#fft-window-size) |
 | Detail (px/sec) | `200` | Pixels per second of audio; higher = more detail |
 | Dynamic range (dB) | `55` | Lower = more contrast |
-| Frequency grid | `y` | Draw tick marks on the spectrogram edge |
 
 **Output**
 

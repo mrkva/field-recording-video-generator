@@ -306,8 +306,6 @@ def run_pipeline(job_id, input_path, params):
             "--fft-window", str(fft_window),
             "--dynamic-range", "90",
         ]
-        if params.get("grid", "y") in ("y", "Y", "yes"):
-            spec_cmd.append("--grid")
         subprocess.run(spec_cmd, check=True, capture_output=True)
         send(3, "Spectrogram generated.", 60)
 

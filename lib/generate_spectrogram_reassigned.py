@@ -136,7 +136,7 @@ def compute_reassigned_spectrogram(audio, sr, fft_size=1024, hop_size=128,
 def generate_reassigned_spectrogram(input_wav, output_png, width, height,
                                     colormap_name='inferno', freq_min=20,
                                     freq_max=None, dynamic_range=60,
-                                    original_sr=None, grid_lines=False,
+                                    original_sr=None,
                                     fft_window=1024):
     """Generate a wide reassigned spectrogram PNG from a WAV file."""
 
@@ -217,45 +217,6 @@ def generate_reassigned_spectrogram(input_wav, output_png, width, height,
     # Resize to exact target dimensions
     img = Image.fromarray(colored)
     img = img.resize((width, height), Image.LANCZOS)
-
-    # Draw frequency grid lines if requested
-    if grid_lines:
-        img_arr = np.array(img)
-
-        f_lo = float(freq_min)
-        f_hi = float(freq_max)
-        f_range = f_hi - f_lo
-
-        if f_range > 100000:
-            step = 10000
-        elif f_range > 40000:
-            step = 5000
-        elif f_range > 10000:
-            step = 1000
-        elif f_range > 5000:
-            step = 1000
-        elif f_range > 2000:
-            step = 500
-        elif f_range > 500:
-            step = 100
-        else:
-            step = 50
-
-        tick_len = max(6, width // 80)  # short tick marks from left edge
-        f_val = step
-        while f_val < f_hi:
-            if f_val > f_lo:
-                frac = (f_val - f_lo) / (f_hi - f_lo + 1e-10)
-                y = int((1.0 - frac) * height)
-                y = max(0, min(height - 1, y))
-                blend = 0.35
-                row = img_arr[y, :tick_len].astype(np.float32)
-                grid_color = np.array([180, 220, 180], dtype=np.float32)
-                img_arr[y, :tick_len] = (row * (1 - blend) + grid_color * blend).astype(np.uint8)
-            f_val += step
-
-        img = Image.fromarray(img_arr)
-
     img.save(output_png, optimize=True)
 
     return {
@@ -278,7 +239,6 @@ def main():
     parser.add_argument('--freq-max', type=float, default=0, help='Max frequency Hz (0=Nyquist)')
     parser.add_argument('--dynamic-range', type=float, default=60, help='Dynamic range in dB')
     parser.add_argument('--original-sr', type=int, default=0, help='Original sample rate')
-    parser.add_argument('--grid', action='store_true', help='Draw frequency grid lines')
     parser.add_argument('--fft-window', type=int, default=1024, help='FFT window size')
     args = parser.parse_args()
 
@@ -292,7 +252,6 @@ def main():
         freq_max=args.freq_max if args.freq_max > 0 else None,
         dynamic_range=args.dynamic_range,
         original_sr=args.original_sr if args.original_sr > 0 else None,
-        grid_lines=args.grid,
         fft_window=args.fft_window,
     )
 
