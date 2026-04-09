@@ -96,8 +96,10 @@ def compute_reassigned_spectrogram(audio, sr, fft_size=1024, hop_size=128,
 
     # t_hat = t + Re(S_tw / S_w) / sr  (time-ramped gives sample offset)
     t_hat = np.where(mask, t_grid + np.real(ratio_tw) / sr, t_grid)
-    # f_hat = f - Im(S_dw / S_w) / (2*pi)  (derivative gives freq offset)
-    f_hat = np.where(mask, f_grid - np.imag(ratio_dw) / (2 * np.pi), f_grid)
+    # f_hat = f - Im(S_dw / S_w) * sr / (2*pi)
+    # dw_window is dw/dm (derivative w.r.t. sample index), so the ratio
+    # gives radians/sample; multiply by sr to convert to Hz.
+    f_hat = np.where(mask, f_grid - np.imag(ratio_dw) * sr / (2 * np.pi), f_grid)
 
     # Energy to accumulate
     energy = np.where(mask, mag_sq, 0)
@@ -120,12 +122,13 @@ def compute_reassigned_spectrogram(audio, sr, fft_size=1024, hop_size=128,
         weights=energy[mask].ravel(),
     )
 
-    # Light Gaussian smoothing to fill sparse gaps between reassigned bins.
-    # Without this, the histogram has a grid-like pattern of empty cells
-    # because reassigned coordinates land on a sparse subset of output bins.
-    # sigma ~1.0 pixel is just enough to close the gaps without blurring
-    # the sharpness that reassignment provides.
-    grid = gaussian_filter(grid, sigma=1.0)
+    # Gaussian smoothing to fill sparse gaps between reassigned bins.
+    # Scale sigma with the ratio of output pixels to input STFT bins so
+    # that sparser grids (small FFT or high output resolution) get enough
+    # smoothing to close gaps without losing sharpness.
+    sigma_f = max(0.7, 0.5 * height / n_freq)
+    sigma_t = max(0.7, 0.5 * width / n_time)
+    grid = gaussian_filter(grid, sigma=(sigma_f, sigma_t))
 
     return grid, f_edges, t_edges
 
