@@ -888,17 +888,21 @@ build_ffmpeg_command() {
     local filter_complex=""
     local inputs=()
 
-    inputs+=(-loop 1 -i "$spec_png")       # [0] spectrogram
-    inputs+=(-loop 1 -i "$info_png")       # [1] info panel
-    inputs+=(-i "$audio")                  # [2] audio
-    inputs+=(-loop 1 -i "$cursor_png")     # [3] cursor
-    inputs+=(-loop 1 -i "$freq_scale_png") # [4] frequency scale overlay
+    # Render at 4x target fps for temporal supersampling, then blend
+    # down to target fps for smoother scrolling.
+    local render_fps=$((fps * 4))
+
+    inputs+=(-framerate "$render_fps" -loop 1 -i "$spec_png")       # [0] spectrogram
+    inputs+=(-framerate "$render_fps" -loop 1 -i "$info_png")       # [1] info panel
+    inputs+=(-i "$audio")                                           # [2] audio
+    inputs+=(-framerate "$render_fps" -loop 1 -i "$cursor_png")     # [3] cursor
+    inputs+=(-framerate "$render_fps" -loop 1 -i "$freq_scale_png") # [4] frequency scale overlay
 
     local next_idx=5
     local photo_idx=""
     local map_anim_idx=""
     if [[ -n "$photo" ]]; then
-        inputs+=(-loop 1 -i "$photo")
+        inputs+=(-framerate "$render_fps" -loop 1 -i "$photo")
         photo_idx="$next_idx"
         next_idx=$((next_idx + 1))
     fi
@@ -1053,14 +1057,18 @@ print(0)
             filter_complex+="x=${timecode_x}:y=${tc_y_adj}:"
             filter_complex+="text='%{pts\:localtime\:${tc_epoch}\:%Y-%m-%dT%H\\\\\:%M\\\\\:%S}'"
             filter_complex+="[tc_drawn];"
-            filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[final_dt];"
-            filter_complex+="[final_dt]format=yuv420p[outv]"
+            filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[pre_blend];"
         else
-            filter_complex+="[${dt_in}]format=yuv420p[outv]"
+            filter_complex+="[${dt_in}]copy[pre_blend];"
         fi
     else
-        filter_complex+="[${dt_in}]format=yuv420p[outv]"
+        filter_complex+="[${dt_in}]copy[pre_blend];"
     fi
+
+    # Temporal supersampling: blend 4 consecutive frames then drop to target fps.
+    # This smooths sub-pixel scrolling steps into clean motion.
+    local blend_frames=$((render_fps / fps))
+    filter_complex+="[pre_blend]tmix=frames=${blend_frames}:weights='$(printf '1 %.0s' $(seq 1 $blend_frames))',fps=${fps},format=yuv420p[outv]"
 
     ffmpeg -y -v warning -stats_period 0.5 -progress pipe:1 \
         "${inputs[@]}" \
