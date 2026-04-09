@@ -11,6 +11,7 @@ import argparse
 import sys
 import numpy as np
 from scipy.io import wavfile
+from scipy.ndimage import gaussian_filter
 import matplotlib
 matplotlib.use('Agg')
 from PIL import Image
@@ -39,12 +40,13 @@ def load_audio_mono(path):
 def _stft(audio, window, fft_size, hop):
     """Compute STFT with a given window. Returns complex matrix [freq, time]."""
     n_frames = max(1, 1 + (len(audio) - fft_size) // hop)
-    out = np.empty((fft_size // 2 + 1, n_frames), dtype=np.complex128)
-    for i in range(n_frames):
-        start = i * hop
-        frame = audio[start:start + fft_size] * window
-        out[:, i] = np.fft.rfft(frame)
-    return out
+    # Build frames via stride tricks (vectorized, no Python loop)
+    shape = (n_frames, fft_size)
+    strides = (audio.strides[0] * hop, audio.strides[0])
+    frames = np.lib.stride_tricks.as_strided(audio, shape=shape, strides=strides)
+    windowed = frames * window[np.newaxis, :]
+    # rfft along the last axis, then transpose to [freq, time]
+    return np.fft.rfft(windowed, axis=1).T
 
 
 def compute_reassigned_spectrogram(audio, sr, fft_size=1024, hop_size=128,
@@ -87,7 +89,6 @@ def compute_reassigned_spectrogram(audio, sr, fft_size=1024, hop_size=128,
     t_grid, f_grid = np.meshgrid(t_centers, f_centers)
 
     # Reassigned coordinates (only where mask is True)
-    # Avoid division by zero
     ratio_tw = np.zeros_like(S_w)
     ratio_dw = np.zeros_like(S_w)
     ratio_tw[mask] = S_tw[mask] / S_w[mask]
@@ -118,6 +119,13 @@ def compute_reassigned_spectrogram(audio, sr, fft_size=1024, hop_size=128,
         bins=[f_edges, t_edges],
         weights=energy[mask].ravel(),
     )
+
+    # Light Gaussian smoothing to fill sparse gaps between reassigned bins.
+    # Without this, the histogram has a grid-like pattern of empty cells
+    # because reassigned coordinates land on a sparse subset of output bins.
+    # sigma ~1.0 pixel is just enough to close the gaps without blurring
+    # the sharpness that reassignment provides.
+    grid = gaussian_filter(grid, sigma=1.0)
 
     return grid, f_edges, t_edges
 
