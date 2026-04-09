@@ -305,6 +305,15 @@
           </select>
         </div>
         <div class="field">
+          <label>Method</label>
+          <select id="specMethod">
+            <option value="standard" selected>Standard</option>
+            <option value="reassigned">Reassigned (sharper, slower)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row" style="margin-top: 8px;">
+        <div class="field">
           <label>Preset</label>
           <select id="preset">
             <option value="square">Square (1080x1080)</option>
@@ -449,6 +458,7 @@ $('settingsForm').addEventListener('submit', async e => {
     freq_min: $('freqMin').value,
     freq_max: $('freqMax').value,
     fft_window: $('fftWindow').value,
+    spec_method: $('specMethod').value,
     preset: $('preset').value,
     playback_speed: $('playbackSpeed').value,
     grid: $('toggleGrid').dataset.value,

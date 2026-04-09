@@ -616,6 +616,9 @@ interactive_dialogue() {
     msg ""
     msg "${BOLD}── Spectrogram ──${RESET}"
 
+    msg "${DIM}standard: classic STFT | reassigned: sharper ridges (3x slower)${RESET}"
+    SPEC_METHOD=$(ask "Method (standard / reassigned)" "standard")
+
     local nyquist=$((AUDIO_SAMPLE_RATE / 2))
     msg "${DIM}Nyquist: ${nyquist} Hz${RESET}"
     FREQ_MIN=$(ask "Freq min (Hz)" "20")
@@ -1109,6 +1112,7 @@ quick_defaults() {
     PHOTO_PATH=""
     FREQ_GRID="y"
     FFT_WINDOW="2048"
+    SPEC_METHOD="standard"
     SPEC_PPS="200"
     DYNAMIC_RANGE="55"
     NORMALIZE_AUDIO="y"
@@ -1251,7 +1255,6 @@ main() {
     fi
 
     # Stage 3: Generate spectrogram
-    echo -e "  ${CYAN}[3/5]${RESET} Generating spectrogram..."
     local spec_png="${TMPDIR}/spectrogram.png"
     local spec_total_w
     spec_total_w=$(calc_spec_dimensions "$effective_duration" "$VIDEO_WIDTH" "$SPEC_PPS")
@@ -1261,7 +1264,15 @@ main() {
         grid_flag="--grid"
     fi
 
-    "$PYTHON" "${LIB_DIR}/generate_spectrogram.py" \
+    local spec_script="generate_spectrogram.py"
+    if [[ "$SPEC_METHOD" == "reassigned" ]]; then
+        spec_script="generate_spectrogram_reassigned.py"
+        echo -e "  ${CYAN}[3/5]${RESET} Generating reassigned spectrogram (this is slower)..."
+    else
+        echo -e "  ${CYAN}[3/5]${RESET} Generating spectrogram..."
+    fi
+
+    "$PYTHON" "${LIB_DIR}/${spec_script}" \
         --input "$input_file" \
         --output "$spec_png" \
         --width "$spec_total_w" \

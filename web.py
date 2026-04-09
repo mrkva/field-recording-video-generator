@@ -291,8 +291,10 @@ def run_pipeline(job_id, input_path, params):
 
         spec_h = video_h - info_panel_height
 
+        spec_method = params.get("spec_method", "standard")
+        spec_script = "generate_spectrogram_reassigned.py" if spec_method == "reassigned" else "generate_spectrogram.py"
         spec_cmd = [
-            python, str(LIB_DIR / "generate_spectrogram.py"),
+            python, str(LIB_DIR / spec_script),
             "--input", input_path,
             "--output", spec_png,
             "--width", str(spec_total_w),
@@ -476,6 +478,7 @@ def generate():
         "preset": data.get("preset", "square"),
         "grid": data.get("grid", "y"),
         "fft_window": data.get("fft_window", "2048"),
+        "spec_method": data.get("spec_method", "standard"),
         "normalize": data.get("normalize", "y"),
         "sample_rate": data.get("sample_rate", 48000),
         "duration": data.get("duration", 0),
