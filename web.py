@@ -359,18 +359,15 @@ Image.fromarray(pixels).save('{cursor_png}')
 
         output_file = os.path.join(str(OUTPUT_DIR), f"{job_id}.mp4")
 
-        render_fps = fps * 4
-        rfps = str(render_fps)
+        sfps = str(fps)
         inputs = [
-            "-framerate", rfps, "-loop", "1", "-i", spec_png,
-            "-framerate", rfps, "-loop", "1", "-i", info_png,
+            "-framerate", sfps, "-loop", "1", "-i", spec_png,
+            "-framerate", sfps, "-loop", "1", "-i", info_png,
             "-i", prepared_audio,
-            "-framerate", rfps, "-loop", "1", "-i", cursor_png,
-            "-framerate", rfps, "-loop", "1", "-i", freq_scale_png,
+            "-framerate", sfps, "-loop", "1", "-i", cursor_png,
+            "-framerate", sfps, "-loop", "1", "-i", freq_scale_png,
         ]
 
-        blend_frames = render_fps // fps
-        weights = " ".join(["1"] * blend_frames)
         fc = (
             f"[0:v]crop=w={video_w}:h={spec_h}:x='{crop_x}':y=0[spec_cropped];"
             f"[3:v]loop=-1:size=1[cur_loop];"
@@ -379,8 +376,7 @@ Image.fromarray(pixels).save('{cursor_png}')
             f"[spec_cursor][scale_loop]overlay=x=0:y=0:shortest=1[spec_final];"
             f"[1:v]scale={video_w}:{info_panel_height}[info];"
             f"[info][spec_final]vstack[combined];"
-            f"[combined]tmix=frames={blend_frames}:weights='{weights}',"
-            f"fps={fps},format=yuv420p[outv]"
+            f"[combined]format=yuv420p[outv]"
         )
 
         ffmpeg_cmd = [
