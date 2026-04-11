@@ -14,8 +14,7 @@ inspired by NASA telemetry displays and industrial camera footage.
 - Two spectrogram methods: standard STFT and reassigned (sharper harmonic ridges)
 - Info panel with recording metadata (file, subject, date, location, equipment, sample info, playback speed)
 - Optional retro monochrome map widget showing recording coordinates
-- Green glow playback cursor
-- Optional frequency tick marks on the spectrogram edge
+- Green glow playback cursor with frequency scale overlay
 - Optional photo band
 - Overwrite protection — prompts before replacing existing output files
 - 60 fps output at 1080x1080 (square) or 1080x1920 (reel)
