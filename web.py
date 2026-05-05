@@ -178,7 +178,11 @@ def load_preset(name):
             line = line.strip()
             if "=" in line and not line.startswith("#"):
                 k, v = line.split("=", 1)
-                conf[k.strip()] = int(v.strip())
+                v = v.strip()
+                try:
+                    conf[k.strip()] = int(v)
+                except ValueError:
+                    conf[k.strip()] = v
     return conf
 
 
@@ -379,13 +383,34 @@ Image.fromarray(pixels).save('{cursor_png}')
             f"[combined]format=yuv420p[outv]"
         )
 
+        enc_flags = [
+            "-c:v", "libx264",
+            "-preset", str(preset.get("H264_PRESET", "slow")),
+            "-crf", str(preset.get("H264_CRF", 18)),
+        ]
+        h264_profile = str(preset.get("H264_PROFILE", "high"))
+        if h264_profile != "high":
+            enc_flags += ["-profile:v", h264_profile]
+        if "H264_LEVEL" in preset:
+            enc_flags += ["-level:v", str(preset["H264_LEVEL"])]
+        if "H264_BFRAMES" in preset:
+            enc_flags += ["-bf", str(preset["H264_BFRAMES"])]
+        if "H264_REFS" in preset:
+            enc_flags += ["-refs", str(preset["H264_REFS"])]
+        if "H264_EXTRA_PARAMS" in preset:
+            enc_flags += ["-x264-params", str(preset["H264_EXTRA_PARAMS"])]
+        enc_flags += ["-c:a", "aac", "-b:a", str(preset.get("AUDIO_BITRATE", "256k"))]
+        if "AUDIO_SAMPLE_RATE" in preset:
+            enc_flags += ["-ar", str(preset["AUDIO_SAMPLE_RATE"])]
+        if "AUDIO_CHANNELS" in preset:
+            enc_flags += ["-ac", str(preset["AUDIO_CHANNELS"])]
+
         ffmpeg_cmd = [
             "ffmpeg", "-y", "-v", "warning",
             *inputs,
             "-filter_complex", fc,
             "-map", "[outv]", "-map", "2:a",
-            "-c:v", "libx264", "-preset", "slow", "-crf", "18",
-            "-c:a", "aac", "-b:a", "256k",
+            *enc_flags,
             "-r", str(fps),
             "-t", str(effective_duration),
             "-movflags", "+faststart",

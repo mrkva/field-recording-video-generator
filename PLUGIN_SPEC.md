@@ -61,13 +61,15 @@ Two types of dynamic text are rendered via ffmpeg `drawtext` filters:
 2. **Scrolling text** — For values exceeding 32 characters. One drawtext filter per unique scroll position in the text cycle, each with `enable='if(lt(t,5),HOLD,eq(mod(max(0,floor(t)-5),CYCLE),POS))'`. Text loops with " • " delimiter. Holds for 5 seconds before scrolling starts.
 
 ### Preset system
-Config files in `presets/` define output dimensions:
+Config files in `presets/` define output dimensions and optional encoding overrides:
 - `ig_reel.conf` — 1080x1920 (vertical, Instagram-safe, default)
 - `reel.conf` — 1080x1920 (vertical, full-bleed)
 - `square.conf` — 1080x1080
 - `landscape.conf` — 1920x1080
+- `cf-u1.conf` — 1024x600 (Panasonic CF-U1 kiosk, baseline H.264 for software decode)
+- `cf-33.conf` — 2160x1440 3:2 (Panasonic CF-33 kiosk, default encoding)
 
-Each preset sets: `VIDEO_WIDTH`, `VIDEO_HEIGHT`, `PHOTO_BAND_HEIGHT`, `INFO_FONT_SIZE`, `FPS`
+Each preset sets: `VIDEO_WIDTH`, `VIDEO_HEIGHT`, `PHOTO_BAND_HEIGHT`, `INFO_FONT_SIZE`, `FPS`, and optionally encoding overrides (`H264_PROFILE`, `H264_LEVEL`, `H264_CRF`, `H264_PRESET`, `H264_BFRAMES`, `H264_REFS`, `H264_EXTRA_PARAMS`, `AUDIO_BITRATE`, `AUDIO_SAMPLE_RATE`, `AUDIO_CHANNELS`)
 
 The `ig_reel` preset additionally sets `SAFE_TOP=250` and `SAFE_BOTTOM=440` to keep content within Instagram Reels/Stories safe zones (avoids overlay by username, follow button at top and like/comment/share buttons, caption at bottom). When safe zone values are set, the content is padded with black bars and all overlay positions (map, timecode, scrolling text) are adjusted accordingly.
 

@@ -208,6 +208,13 @@ Presets live in `presets/` and set video dimensions, font size, and frame rate:
 | `reel` | 1080x1920 | Vertical, full-bleed |
 | `square` | 1080x1080 | Instagram post, general use |
 | `landscape` | 1920x1080 | YouTube, desktop |
+| `cf-u1` | 1024x600 | Panasonic Toughbook CF-U1 kiosk (Atom Z520, software decode) |
+| `cf-33` | 2160x1440 | Panasonic Toughbook CF-33 kiosk (i5-7300U, hardware decode, 3:2) |
+
+Presets can also override encoding parameters (`H264_PROFILE`, `H264_LEVEL`,
+`H264_CRF`, `H264_BFRAMES`, `H264_REFS`, `H264_EXTRA_PARAMS`, `AUDIO_BITRATE`,
+`AUDIO_SAMPLE_RATE`, `AUDIO_CHANNELS`) for device-specific constraints. Unset
+variables use the defaults (high profile, CRF 18, slow preset, AAC 256k).
 
 ## Output
 
@@ -235,6 +242,8 @@ presets/
   reel.conf
   square.conf
   landscape.conf
+  cf-u1.conf                          # Toughbook CF-U1 kiosk (baseline H.264)
+  cf-33.conf                          # Toughbook CF-33 kiosk (3:2 aspect)
 requirements.txt
 ```
 

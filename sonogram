@@ -649,7 +649,7 @@ interactive_dialogue() {
     msg ""
     msg "${BOLD}── Output ──${RESET}"
 
-    PRESET=$(ask "Preset (ig_reel / reel / square / landscape)" "ig_reel")
+    PRESET=$(ask "Preset (ig_reel / reel / square / landscape / cf-u1 / cf-33)" "ig_reel")
     if [[ ! -f "${PRESETS_DIR}/${PRESET}.conf" ]]; then
         msg "${YELLOW}Unknown preset '${PRESET}', defaulting to ig_reel.${RESET}"
         PRESET="ig_reel"
@@ -1062,12 +1062,22 @@ print(0)
         filter_complex+="[${dt_in}]format=yuv420p[outv]"
     fi
 
+    # Build encoding flags from preset overrides
+    local -a enc_flags=(-c:v libx264 -preset "$H264_PRESET" -crf "$H264_CRF")
+    if [[ "$H264_PROFILE" != "high" ]]; then enc_flags+=(-profile:v "$H264_PROFILE"); fi
+    if [[ -n "$H264_LEVEL" ]]; then enc_flags+=(-level:v "$H264_LEVEL"); fi
+    if [[ -n "$H264_BFRAMES" ]]; then enc_flags+=(-bf "$H264_BFRAMES"); fi
+    if [[ -n "$H264_REFS" ]]; then enc_flags+=(-refs "$H264_REFS"); fi
+    if [[ -n "$H264_EXTRA_PARAMS" ]]; then enc_flags+=(-x264-params "$H264_EXTRA_PARAMS"); fi
+    enc_flags+=(-c:a aac -b:a "$AUDIO_BITRATE")
+    if [[ -n "$AUDIO_SAMPLE_RATE" ]]; then enc_flags+=(-ar "$AUDIO_SAMPLE_RATE"); fi
+    if [[ -n "$AUDIO_CHANNELS" ]]; then enc_flags+=(-ac "$AUDIO_CHANNELS"); fi
+
     ffmpeg -y -v warning -stats_period 0.5 -progress pipe:1 \
         "${inputs[@]}" \
         -filter_complex "$filter_complex" \
         -map "[outv]" -map 2:a \
-        -c:v libx264 -preset slow -crf 18 \
-        -c:a aac -b:a 256k \
+        "${enc_flags[@]}" \
         -r "$fps" \
         -t "$duration" \
         -movflags +faststart \
@@ -1186,6 +1196,18 @@ main() {
 
     # Load preset
     source "${PRESETS_DIR}/${PRESET}.conf"
+
+    # Encoding override defaults (preset may override any of these)
+    H264_PROFILE="${H264_PROFILE:-high}"
+    H264_LEVEL="${H264_LEVEL:-}"
+    H264_PRESET="${H264_PRESET:-slow}"
+    H264_CRF="${H264_CRF:-18}"
+    H264_EXTRA_PARAMS="${H264_EXTRA_PARAMS:-}"
+    H264_BFRAMES="${H264_BFRAMES:-}"
+    H264_REFS="${H264_REFS:-}"
+    AUDIO_BITRATE="${AUDIO_BITRATE:-256k}"
+    AUDIO_SAMPLE_RATE="${AUDIO_SAMPLE_RATE:-}"
+    AUDIO_CHANNELS="${AUDIO_CHANNELS:-}"
 
     # Calculate effective duration
     local effective_duration
