@@ -66,8 +66,9 @@ playback cursor, and metadata overlay.
 The program will interactively ask for metadata and settings.
 
 Options:
-  -q, --quick   Quick test mode: skip dialogue, use default metadata
-  -h, --help    Show this help message
+  -q, --quick          Quick test mode: skip dialogue, use default metadata
+  -c, --config FILE    Load settings from a key=value config file (non-interactive)
+  -h, --help           Show this help message
 EOF
     exit 0
 }
@@ -1107,6 +1108,72 @@ for line in sys.stdin:
 }
 
 # ============================================================================
+# Load config file (non-interactive mode)
+# ============================================================================
+load_config() {
+    local config_file="$1"
+    local input_file="$2"
+
+    if [[ ! -f "$config_file" ]]; then
+        echo -e "${RED}ERROR: Config file not found: ${config_file}${RESET}" >&2
+        exit 1
+    fi
+
+    # Whitelist of known variables that may appear in the config file
+    local -a allowed_vars=(
+        INPUT DATETIME SUBJECT RECORDER LOCATION COORDINATES
+        FREQ_MIN FREQ_MAX FFT_WINDOW SPEC_METHOD SPEC_PPS DYNAMIC_RANGE
+        PLAYBACK_SPEED_INPUT NORMALIZE_AUDIO PRESET PHOTO_PATH
+        SHOW_TIMECODE OUTPUT_FILE
+    )
+
+    # Read config file line by line, only setting allowed variables
+    while IFS='=' read -r key value; do
+        # Skip blank lines and comments
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        # Trim whitespace from key
+        key=$(echo "$key" | tr -d '[:space:]')
+        local allowed=false
+        for v in "${allowed_vars[@]}"; do
+            if [[ "$key" == "$v" ]]; then
+                allowed=true
+                break
+            fi
+        done
+        if [[ "$allowed" == true ]]; then
+            # Use printf to handle values safely (eval only the assignment)
+            printf -v "$key" '%s' "$value"
+        fi
+    done < "$config_file"
+
+    # Map config keys to the internal variable names used by the pipeline
+    local nyquist=$((AUDIO_SAMPLE_RATE / 2))
+
+    META_DATETIME="${DATETIME:-$(date +%Y-%m-%dT%H:%M:%S)}"
+    META_SUBJECT="${SUBJECT:-}"
+    META_RECORDER="${RECORDER:-Unknown}"
+    META_LOCATION="${LOCATION:-}"
+    META_COORDINATES="${COORDINATES:-}"
+    FREQ_MIN="${FREQ_MIN:-20}"
+    FREQ_MAX="${FREQ_MAX:-$nyquist}"
+    PLAYBACK_SPEED_INPUT="${PLAYBACK_SPEED_INPUT:-1x}"
+    PRESET="${PRESET:-ig_reel}"
+    PHOTO_PATH="${PHOTO_PATH:-}"
+    FFT_WINDOW="${FFT_WINDOW:-2048}"
+    SPEC_METHOD="${SPEC_METHOD:-standard}"
+    SPEC_PPS="${SPEC_PPS:-200}"
+    DYNAMIC_RANGE="${DYNAMIC_RANGE:-55}"
+    NORMALIZE_AUDIO="${NORMALIZE_AUDIO:-y}"
+    SHOW_TIMECODE="${SHOW_TIMECODE:-y}"
+    OUTPUT_FILE="${OUTPUT_FILE:-${input_file%.*}_video.mp4}"
+
+    msg ""
+    msg "${BOLD}Config mode${RESET} — loaded settings from ${config_file}"
+    msg "${DIM}Subject: ${META_SUBJECT} | Preset: ${PRESET} | FFT: ${FFT_WINDOW}${RESET}"
+    msg ""
+}
+
+# ============================================================================
 # Main
 # ============================================================================
 quick_defaults() {
@@ -1147,21 +1214,35 @@ quick_defaults() {
 main() {
     # Parse args
     local quick_mode=false
+    local config_file=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -q|--quick) quick_mode=true; shift ;;
-            -h|--help)  usage ;;
-            -*)         echo -e "${RED}Unknown option: $1${RESET}" >&2; usage ;;
-            *)          break ;;
+            -q|--quick)  quick_mode=true; shift ;;
+            -c|--config)
+                if [[ -z "${2:-}" ]]; then
+                    echo -e "${RED}ERROR: --config requires a file argument${RESET}" >&2
+                    usage
+                fi
+                config_file="$2"; shift 2 ;;
+            -h|--help)   usage ;;
+            -*)          echo -e "${RED}Unknown option: $1${RESET}" >&2; usage ;;
+            *)           break ;;
         esac
     done
 
-    if [[ $# -lt 1 ]]; then
-        usage
+    # Resolve input file: positional arg, or INPUT from config file
+    local input_file=""
+    if [[ $# -ge 1 ]]; then
+        input_file="$1"
+    elif [[ -n "$config_file" ]]; then
+        # Peek at the config file for INPUT= before full parsing
+        input_file=$(grep -m1 '^INPUT=' "$config_file" | cut -d= -f2-)
     fi
 
-    local input_file="$1"
+    if [[ -z "$input_file" ]]; then
+        usage
+    fi
 
     if [[ ! -f "$input_file" ]]; then
         echo -e "${RED}ERROR: File not found: ${input_file}${RESET}" >&2
@@ -1173,8 +1254,10 @@ main() {
     # Probe audio
     probe_audio "$input_file"
 
-    # Interactive dialogue or quick defaults
-    if [[ "$quick_mode" == true ]]; then
+    # Interactive dialogue, quick defaults, or config file
+    if [[ -n "$config_file" ]]; then
+        load_config "$config_file" "$input_file"
+    elif [[ "$quick_mode" == true ]]; then
         quick_defaults "$input_file"
     else
         interactive_dialogue "$input_file"
