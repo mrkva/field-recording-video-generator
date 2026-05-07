@@ -35,6 +35,7 @@ class AppState: ObservableObject {
     @Published var freqMax: Int = 22050
     @Published var dynamicRange: Int = 55
     @Published var specPPS: Int = 200
+    @Published var colormap: String = "inferno"
 
     // Output settings
     @Published var selectedFormat: VideoFormat = VideoFormat.all[0]
@@ -173,6 +174,7 @@ class AppState: ObservableObject {
         config["SPEC_METHOD"] = specMethod
         config["SPEC_PPS"] = String(specPPS)
         config["DYNAMIC_RANGE"] = String(dynamicRange)
+        config["COLORMAP"] = colormap
         config["PLAYBACK_SPEED_INPUT"] = playbackSpeed
         config["NORMALIZE_AUDIO"] = normalizeAudio ? "y" : "n"
         config["PRESET"] = selectedFormat.id

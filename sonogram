@@ -644,6 +644,9 @@ interactive_dialogue() {
     msg "${DIM}Lower = more contrast. 40-60: detailed patterns | 90: wide dynamic range${RESET}"
     DYNAMIC_RANGE=$(ask "Dynamic range (dB)" "55")
 
+    msg "${DIM}Color scheme: inferno (default) | gray_r (white bg, black data) | viridis | magma | hot${RESET}"
+    COLORMAP=$(ask "Color scheme" "inferno")
+
     # ------------------------------------------------------------------
     # 4. Output
     # ------------------------------------------------------------------
@@ -1123,7 +1126,7 @@ load_config() {
     local -a allowed_vars=(
         INPUT DATETIME SUBJECT RECORDER LOCATION COORDINATES
         FREQ_MIN FREQ_MAX FFT_WINDOW SPEC_METHOD SPEC_PPS DYNAMIC_RANGE
-        PLAYBACK_SPEED_INPUT NORMALIZE_AUDIO PRESET PHOTO_PATH
+        COLORMAP PLAYBACK_SPEED_INPUT NORMALIZE_AUDIO PRESET PHOTO_PATH
         SHOW_TIMECODE OUTPUT_FILE
     )
 
@@ -1163,6 +1166,7 @@ load_config() {
     SPEC_METHOD="${SPEC_METHOD:-standard}"
     SPEC_PPS="${SPEC_PPS:-200}"
     DYNAMIC_RANGE="${DYNAMIC_RANGE:-55}"
+    COLORMAP="${COLORMAP:-inferno}"
     NORMALIZE_AUDIO="${NORMALIZE_AUDIO:-y}"
     SHOW_TIMECODE="${SHOW_TIMECODE:-y}"
     OUTPUT_FILE="${OUTPUT_FILE:-${input_file%.*}_video.mp4}"
@@ -1201,6 +1205,7 @@ quick_defaults() {
     SPEC_METHOD="standard"
     SPEC_PPS="200"
     DYNAMIC_RANGE="55"
+    COLORMAP="inferno"
     NORMALIZE_AUDIO="y"
     SHOW_TIMECODE="y"
     OUTPUT_FILE="${input_file%.*}_video.mp4"
@@ -1386,7 +1391,7 @@ main() {
         --output "$spec_png" \
         --width "$spec_total_w" \
         --height "$SPEC_HEIGHT" \
-        --colormap inferno \
+        --colormap "$COLORMAP" \
         --freq-min "$FREQ_MIN" \
         --freq-max "$FREQ_MAX" \
         --original-sr "$AUDIO_SAMPLE_RATE" \

@@ -62,6 +62,7 @@ struct UserPreset: Identifiable, Codable, Hashable {
     var freqMax: Int
     var dynamicRange: Int
     var specPPS: Int
+    var colormap: String
     var playbackSpeed: String
     var normalizeAudio: Bool
     var showTimecode: Bool
@@ -80,6 +81,7 @@ struct UserPreset: Identifiable, Codable, Hashable {
         self.freqMax = state.freqMax
         self.dynamicRange = state.dynamicRange
         self.specPPS = state.specPPS
+        self.colormap = state.colormap
         self.playbackSpeed = state.playbackSpeed
         self.normalizeAudio = state.normalizeAudio
         self.showTimecode = state.showTimecode
@@ -99,6 +101,7 @@ struct UserPreset: Identifiable, Codable, Hashable {
         state.freqMax = freqMax
         state.dynamicRange = dynamicRange
         state.specPPS = specPPS
+        state.colormap = colormap
         state.playbackSpeed = playbackSpeed
         state.normalizeAudio = normalizeAudio
         state.showTimecode = showTimecode

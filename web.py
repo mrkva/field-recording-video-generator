@@ -303,7 +303,7 @@ def run_pipeline(job_id, input_path, params):
             "--output", spec_png,
             "--width", str(spec_total_w),
             "--height", str(spec_h),
-            "--colormap", "inferno",
+            "--colormap", params.get("colormap", "inferno"),
             "--freq-min", str(freq_min),
             "--freq-max", str(freq_max),
             "--original-sr", str(params.get("sample_rate", 48000)),

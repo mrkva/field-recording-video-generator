@@ -84,6 +84,22 @@ struct SpectrogramSettingsView: View {
                         .frame(width: 50)
                 }
 
+                // Color scheme
+                HStack {
+                    Text("Colors")
+                        .frame(width: 80, alignment: .trailing)
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $state.colormap) {
+                        Text("Inferno").tag("inferno")
+                        Text("Paper (B/W)").tag("gray_r")
+                        Text("Viridis").tag("viridis")
+                        Text("Magma").tag("magma")
+                        Text("Hot").tag("hot")
+                        Text("Bone").tag("bone")
+                    }
+                    .frame(maxWidth: 160)
+                }
+
                 // Pixels per second (scroll speed)
                 HStack {
                     Text("Speed")

@@ -315,6 +315,19 @@
       <div id="fftHint" style="margin-top: 4px; margin-left: 132px; font-size: 11px; color: var(--dim);"></div>
       <div class="field-row" style="margin-top: 8px;">
         <div class="field">
+          <label>Color Scheme</label>
+          <select id="colormap">
+            <option value="inferno" selected>Inferno (default)</option>
+            <option value="gray_r">Paper (white bg, black data)</option>
+            <option value="viridis">Viridis</option>
+            <option value="magma">Magma</option>
+            <option value="hot">Hot</option>
+            <option value="bone">Bone</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row" style="margin-top: 8px;">
+        <div class="field">
           <label>Preset</label>
           <select id="preset">
             <option value="ig_reel">IG Reel (1080x1920)</option>
@@ -478,6 +491,7 @@ $('settingsForm').addEventListener('submit', async e => {
     freq_max: $('freqMax').value,
     fft_window: $('fftWindow').value,
     spec_method: $('specMethod').value,
+    colormap: $('colormap').value,
     preset: $('preset').value,
     playback_speed: $('playbackSpeed').value,
     normalize: $('toggleNormalize').dataset.value,
