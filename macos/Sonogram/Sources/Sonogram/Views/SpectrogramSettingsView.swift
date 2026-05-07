@@ -1,11 +1,12 @@
 import SwiftUI
 
 struct SpectrogramSettingsView: View {
-    @EnvironmentObject var state: AppState
+    @Environment(AppState.self) var state
 
     private let fftOptions = [256, 512, 1024, 2048, 4096, 8192]
 
     var body: some View {
+        @Bindable var state = state
         GroupBox("Spectrogram") {
             VStack(alignment: .leading, spacing: 12) {
                 // Method picker

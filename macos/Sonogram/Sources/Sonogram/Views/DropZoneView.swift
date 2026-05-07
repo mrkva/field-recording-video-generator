@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct DropZoneView: View {
-    @EnvironmentObject var state: AppState
+    @Environment(AppState.self) var state
     @State private var isTargeted = false
 
     var body: some View {
@@ -12,7 +12,6 @@ struct DropZoneView: View {
             Image(systemName: "waveform.badge.plus")
                 .font(.system(size: 64))
                 .foregroundStyle(isTargeted ? .blue : .secondary)
-                .symbolEffect(.pulse, isActive: isTargeted)
 
             Text("Drop a WAV file here")
                 .font(.title2)

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct GenerationView: View {
-    @EnvironmentObject var state: AppState
+    @Environment(AppState.self) var state
 
     var body: some View {
         VStack(spacing: 0) {

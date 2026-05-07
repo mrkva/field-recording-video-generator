@@ -1,10 +1,11 @@
 import SwiftUI
 
 struct PresetGridView: View {
-    @EnvironmentObject var state: AppState
+    @Environment(AppState.self) var state
     @State private var presetName: String = ""
 
     var body: some View {
+        @Bindable var state = state
         GroupBox("Presets") {
             VStack(alignment: .leading, spacing: 10) {
                 if state.presetStore.presets.isEmpty {
@@ -97,7 +98,7 @@ struct PresetRow: View {
 }
 
 struct SavePresetSheet: View {
-    @EnvironmentObject var state: AppState
+    @Environment(AppState.self) var state
     @State private var name: String = ""
     @Environment(\.dismiss) private var dismiss
 

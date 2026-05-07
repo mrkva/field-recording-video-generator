@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-import Combine
+import Observation
 
 enum GenerationPhase: String {
     case idle = "Ready"
@@ -15,54 +15,44 @@ enum GenerationPhase: String {
 }
 
 @MainActor
-class AppState: ObservableObject {
-    // Audio file
-    @Published var audioFile: AudioFileInfo?
-    @Published var audioFilePath: String = ""
+@Observable
+class AppState {
+    var audioFile: AudioFileInfo?
+    var audioFilePath: String = ""
 
-    // Metadata
-    @Published var subject: String = ""
-    @Published var location: String = ""
-    @Published var coordinates: String = ""
-    @Published var recorder: String = ""
-    @Published var datetime: String = ""
-    @Published var showTimecode: Bool = true
+    var subject: String = ""
+    var location: String = ""
+    var coordinates: String = ""
+    var recorder: String = ""
+    var datetime: String = ""
+    var showTimecode: Bool = true
 
-    // Spectrogram settings
-    @Published var specMethod: String = "standard"
-    @Published var fftWindow: Int = 2048
-    @Published var freqMin: Int = 20
-    @Published var freqMax: Int = 22050
-    @Published var dynamicRange: Int = 55
-    @Published var specPPS: Int = 200
-    @Published var colormap: String = "inferno"
+    var specMethod: String = "standard"
+    var fftWindow: Int = 2048
+    var freqMin: Int = 20
+    var freqMax: Int = 22050
+    var dynamicRange: Int = 55
+    var specPPS: Int = 200
+    var colormap: String = "inferno"
 
-    // Output settings
-    @Published var selectedFormat: VideoFormat = VideoFormat.all[0]
-    @Published var playbackSpeed: String = "1x"
-    @Published var normalizeAudio: Bool = true
-    @Published var photoPath: String = ""
-    @Published var outputPath: String = ""
-    @Published var openAfterExport: Bool = false
+    var selectedFormat: VideoFormat = VideoFormat.all[0]
+    var playbackSpeed: String = "1x"
+    var normalizeAudio: Bool = true
+    var photoPath: String = ""
+    var outputPath: String = ""
+    var openAfterExport: Bool = false
 
-    // Coordinate picker
-    @Published var showCoordinatePicker: Bool = false
+    var showCoordinatePicker: Bool = false
+    var errorMessage: String?
 
-    // Error display
-    @Published var errorMessage: String?
+    var phase: GenerationPhase = .idle
+    var progressLog: [String] = []
+    var isGenerating: Bool = false
+    var generatedVideoPath: String?
 
-    // Generation state
-    @Published var phase: GenerationPhase = .idle
-    @Published var progressLog: [String] = []
-    @Published var isGenerating: Bool = false
-    @Published var generatedVideoPath: String?
-
-    // Presets & autocomplete
     let presetStore = PresetStore()
     let autocomplete = AutocompleteStore()
-
-    // Save preset sheet
-    @Published var showSavePreset: Bool = false
+    var showSavePreset: Bool = false
 
     var fftHint: String {
         if specMethod == "reassigned" {

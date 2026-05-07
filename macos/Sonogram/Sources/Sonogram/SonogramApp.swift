@@ -2,12 +2,12 @@ import SwiftUI
 
 @main
 struct SonogramApp: App {
-    @StateObject private var appState = AppState()
+    @State private var appState = AppState()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(appState)
+                .environment(appState)
                 .frame(minWidth: 900, minHeight: 700)
         }
         .windowStyle(.titleBar)

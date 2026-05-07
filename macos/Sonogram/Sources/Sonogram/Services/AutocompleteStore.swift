@@ -1,11 +1,13 @@
 import Foundation
+import Observation
 
 @MainActor
-class AutocompleteStore: ObservableObject {
-    @Published var subjects: [String] = []
-    @Published var locations: [String] = []
-    @Published var recorders: [String] = []
-    @Published var coordinates: [String] = []
+@Observable
+class AutocompleteStore {
+    var subjects: [String] = []
+    var locations: [String] = []
+    var recorders: [String] = []
+    var coordinates: [String] = []
 
     private let storePath: URL
 

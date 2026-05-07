@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct MetadataFormView: View {
-    @EnvironmentObject var state: AppState
+    @Environment(AppState.self) var state
 
     var body: some View {
+        @Bindable var state = state
         GroupBox("Metadata") {
             VStack(alignment: .leading, spacing: 10) {
                 fieldRow("Subject", text: $state.subject,

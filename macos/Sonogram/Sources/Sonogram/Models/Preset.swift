@@ -113,8 +113,9 @@ struct UserPreset: Identifiable, Codable, Hashable {
 }
 
 @MainActor
-class PresetStore: ObservableObject {
-    @Published var presets: [UserPreset] = []
+@Observable
+class PresetStore {
+    var presets: [UserPreset] = []
 
     private let storePath: URL
 

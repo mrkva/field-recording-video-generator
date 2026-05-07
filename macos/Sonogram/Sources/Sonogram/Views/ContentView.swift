@@ -2,14 +2,15 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @EnvironmentObject var state: AppState
+    @Environment(AppState.self) var state
 
     var body: some View {
+        @Bindable var state = state
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
         } detail: {
-            if state.isGenerating || state.phase == .done {
+            if state.isGenerating || state.phase == .done || state.phase == .failed {
                 GenerationView()
             } else if state.audioFile != nil {
                 ScrollView {
@@ -99,7 +100,7 @@ struct ContentView: View {
             }
 
             Section("Method") {
-                Picker("Spectrogram", selection: $state.specMethod) {
+                Picker("Spectrogram", selection: Bindable(state).specMethod) {
                     Text("Standard").tag("standard")
                     Text("Reassigned").tag("reassigned")
                 }
@@ -109,7 +110,7 @@ struct ContentView: View {
                 }
             }
 
-            if state.isGenerating || state.phase == .done {
+            if state.isGenerating || state.phase == .done || state.phase == .failed {
                 Section("Status") {
                     Label(state.phase.rawValue, systemImage: state.phase == .done ? "checkmark.circle" : "gear")
                 }
@@ -167,7 +168,8 @@ struct ContentView: View {
     }
 
     private var outputSettings: some View {
-        GroupBox("Output") {
+        @Bindable var state = state
+        return GroupBox("Output") {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("Speed")

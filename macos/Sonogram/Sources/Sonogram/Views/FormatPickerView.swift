@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FormatPickerView: View {
-    @EnvironmentObject var state: AppState
+    @Environment(AppState.self) var state
 
     var body: some View {
         GroupBox("Format") {
