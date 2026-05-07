@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 class AutocompleteStore: ObservableObject {
     @Published var subjects: [String] = []
     @Published var locations: [String] = []

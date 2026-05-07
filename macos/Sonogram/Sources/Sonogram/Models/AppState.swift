@@ -117,7 +117,7 @@ class AppState: ObservableObject {
             showTimecode = info.hasBWF
         case .failure(let error):
             audioFile = nil
-            errorMessage = error
+            errorMessage = error.message
         }
 
         if outputPath.isEmpty {

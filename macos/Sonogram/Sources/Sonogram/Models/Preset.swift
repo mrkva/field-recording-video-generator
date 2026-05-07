@@ -109,6 +109,7 @@ struct UserPreset: Identifiable, Codable, Hashable {
     }
 }
 
+@MainActor
 class PresetStore: ObservableObject {
     @Published var presets: [UserPreset] = []
 

@@ -6,6 +6,10 @@ enum CLIEvent {
     case failed(String)
 }
 
+struct ProbeError: Error {
+    let message: String
+}
+
 struct CLIBridge {
     private static let extraPaths = [
         "/opt/homebrew/bin",
@@ -51,9 +55,9 @@ struct CLIBridge {
         return nil
     }
 
-    static func probeAudio(path: String) async -> Result<AudioFileInfo, String> {
+    static func probeAudio(path: String) async -> Result<AudioFileInfo, ProbeError> {
         guard let ffprobe = findExecutable("ffprobe") else {
-            return .failure("ffprobe not found. Install ffmpeg (brew install ffmpeg).")
+            return .failure(ProbeError(message: "ffprobe not found. Install ffmpeg (brew install ffmpeg)."))
         }
 
         let process = Process()
@@ -73,24 +77,24 @@ struct CLIBridge {
             try process.run()
             process.waitUntilExit()
         } catch {
-            return .failure("Failed to run ffprobe: \(error.localizedDescription)")
+            return .failure(ProbeError(message: "Failed to run ffprobe: \(error.localizedDescription)"))
         }
 
         if process.terminationStatus != 0 {
             let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
             let errText = String(data: errData, encoding: .utf8) ?? ""
-            return .failure("ffprobe failed (exit \(process.terminationStatus)): \(errText)")
+            return .failure(ProbeError(message: "ffprobe failed (exit \(process.terminationStatus)): \(errText)"))
         }
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return .failure("Failed to parse ffprobe output.")
+            return .failure(ProbeError(message: "Failed to parse ffprobe output."))
         }
 
         guard let streams = json["streams"] as? [[String: Any]],
               let audioStream = streams.first(where: { ($0["codec_type"] as? String) == "audio" }),
               let format = json["format"] as? [String: Any] else {
-            return .failure("No audio stream found in file.")
+            return .failure(ProbeError(message: "No audio stream found in file."))
         }
 
         let sampleRate = Int(audioStream["sample_rate"] as? String ?? "44100") ?? 44100
