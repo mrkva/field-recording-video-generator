@@ -401,10 +401,10 @@ Image.fromarray(pixels).save('{cursor_png}')
         if "H264_EXTRA_PARAMS" in preset:
             enc_flags += ["-x264-params", str(preset["H264_EXTRA_PARAMS"])]
         enc_flags += ["-c:a", "aac", "-b:a", str(preset.get("AUDIO_BITRATE", "256k"))]
-        if "AUDIO_SAMPLE_RATE" in preset:
-            enc_flags += ["-ar", str(preset["AUDIO_SAMPLE_RATE"])]
-        if "AUDIO_CHANNELS" in preset:
-            enc_flags += ["-ac", str(preset["AUDIO_CHANNELS"])]
+        if "AUDIO_OUT_RATE" in preset:
+            enc_flags += ["-ar", str(preset["AUDIO_OUT_RATE"])]
+        if "AUDIO_OUT_CHANNELS" in preset:
+            enc_flags += ["-ac", str(preset["AUDIO_OUT_CHANNELS"])]
 
         # -t bounds the duration; -shortest is omitted — in ffmpeg 7.x it can
         # propagate EOF before the AAC encoder receives a frame, producing

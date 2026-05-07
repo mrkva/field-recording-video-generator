@@ -1074,8 +1074,10 @@ print(0)
     if [[ -n "$H264_REFS" ]]; then enc_flags+=(-refs "$H264_REFS"); fi
     if [[ -n "$H264_EXTRA_PARAMS" ]]; then enc_flags+=(-x264-params "$H264_EXTRA_PARAMS"); fi
     enc_flags+=(-c:a aac -b:a "$AUDIO_BITRATE")
-    if [[ -n "$AUDIO_SAMPLE_RATE" ]]; then enc_flags+=(-ar "$AUDIO_SAMPLE_RATE"); fi
-    if [[ -n "$AUDIO_CHANNELS" ]]; then enc_flags+=(-ac "$AUDIO_CHANNELS"); fi
+    # Encoder targets — distinct from AUDIO_SAMPLE_RATE/AUDIO_CHANNELS, which
+    # probe_audio sets from the source file (and AAC rejects rates >96 kHz).
+    if [[ -n "$AUDIO_OUT_RATE" ]]; then enc_flags+=(-ar "$AUDIO_OUT_RATE"); fi
+    if [[ -n "$AUDIO_OUT_CHANNELS" ]]; then enc_flags+=(-ac "$AUDIO_OUT_CHANNELS"); fi
 
     # -t bounds the duration; -shortest is omitted — in ffmpeg 7.x it can
     # propagate EOF before the AAC encoder receives a frame, producing
@@ -1296,8 +1298,8 @@ main() {
     H264_BFRAMES="${H264_BFRAMES:-}"
     H264_REFS="${H264_REFS:-}"
     AUDIO_BITRATE="${AUDIO_BITRATE:-256k}"
-    AUDIO_SAMPLE_RATE="${AUDIO_SAMPLE_RATE:-}"
-    AUDIO_CHANNELS="${AUDIO_CHANNELS:-}"
+    AUDIO_OUT_RATE="${AUDIO_OUT_RATE:-}"
+    AUDIO_OUT_CHANNELS="${AUDIO_OUT_CHANNELS:-}"
 
     # Calculate effective duration
     local effective_duration
