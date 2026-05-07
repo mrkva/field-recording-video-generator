@@ -70,7 +70,7 @@ struct UserPreset: Identifiable, Codable, Hashable {
     var coordinates: String
     var recorder: String
 
-    init(name: String, from state: AppState) {
+    @MainActor init(name: String, from state: AppState) {
         self.id = UUID()
         self.name = name
         self.formatID = state.selectedFormat.id
@@ -89,7 +89,7 @@ struct UserPreset: Identifiable, Codable, Hashable {
         self.recorder = state.recorder
     }
 
-    func apply(to state: AppState) {
+    @MainActor func apply(to state: AppState) {
         if let fmt = VideoFormat.find(formatID) {
             state.selectedFormat = fmt
         }
