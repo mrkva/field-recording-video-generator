@@ -46,6 +46,9 @@ class AppState: ObservableObject {
     // Coordinate picker
     @Published var showCoordinatePicker: Bool = false
 
+    // Error display
+    @Published var errorMessage: String?
+
     // Generation state
     @Published var phase: GenerationPhase = .idle
     @Published var progressLog: [String] = []
@@ -98,10 +101,12 @@ class AppState: ObservableObject {
 
     func loadAudioFile(url: URL) async {
         audioFilePath = url.path
-        let info = await CLIBridge.probeAudio(path: url.path)
-        audioFile = info
+        errorMessage = nil
 
-        if let info = info {
+        let result = await CLIBridge.probeAudio(path: url.path)
+        switch result {
+        case .success(let info):
+            audioFile = info
             freqMax = info.nyquist
             if let enc = info.encodedBy, !enc.isEmpty {
                 recorder = enc
@@ -110,6 +115,9 @@ class AppState: ObservableObject {
                 datetime = ct
             }
             showTimecode = info.hasBWF
+        case .failure(let error):
+            audioFile = nil
+            errorMessage = error
         }
 
         if outputPath.isEmpty {

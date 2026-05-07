@@ -28,6 +28,23 @@ struct DropZoneView: View {
             .buttonStyle(.bordered)
             .keyboardShortcut("o", modifiers: .command)
 
+            if let error = state.errorMessage {
+                VStack(spacing: 4) {
+                    Label("Error", systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.red)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 400)
+                }
+                .padding(12)
+                .background(.red.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+
             Spacer()
 
             VStack(spacing: 4) {

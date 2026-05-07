@@ -7,13 +7,36 @@ enum CLIEvent {
 }
 
 struct CLIBridge {
+    private static let extraPaths = [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/opt/local/bin",
+    ]
+
+    private static var enrichedPATH: String {
+        let current = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        let missing = extraPaths.filter { !current.contains($0) }
+        if missing.isEmpty { return current }
+        return (missing + [current]).joined(separator: ":")
+    }
+
+    private static func findExecutable(_ name: String) -> String? {
+        let searchPaths = extraPaths + ["/usr/bin", "/usr/local/bin"]
+        for dir in searchPaths {
+            let path = "\(dir)/\(name)"
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+        return nil
+    }
+
     static func findSonogramScript() -> String? {
         let candidates = [
             Bundle.main.bundlePath + "/../../../sonogram",
             FileManager.default.currentDirectoryPath + "/sonogram",
             "/usr/local/bin/sonogram",
         ]
-        // Also check parent directories of the app bundle
         if let appPath = Bundle.main.bundlePath.components(separatedBy: "/macos/").first {
             let repoScript = appPath + "/sonogram"
             if FileManager.default.isExecutableFile(atPath: repoScript) {
@@ -28,31 +51,46 @@ struct CLIBridge {
         return nil
     }
 
-    static func probeAudio(path: String) async -> AudioFileInfo? {
+    static func probeAudio(path: String) async -> Result<AudioFileInfo, String> {
+        guard let ffprobe = findExecutable("ffprobe") else {
+            return .failure("ffprobe not found. Install ffmpeg (brew install ffmpeg).")
+        }
+
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["ffprobe", "-v", "quiet", "-print_format", "json",
+        process.executableURL = URL(fileURLWithPath: ffprobe)
+        process.arguments = ["-v", "quiet", "-print_format", "json",
                             "-show_format", "-show_streams", path]
+        process.environment = ProcessInfo.processInfo.environment.merging(
+            ["PATH": enrichedPATH], uniquingKeysWith: { _, new in new }
+        )
+
         let pipe = Pipe()
+        let errPipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = Pipe()
+        process.standardError = errPipe
 
         do {
             try process.run()
             process.waitUntilExit()
         } catch {
-            return nil
+            return .failure("Failed to run ffprobe: \(error.localizedDescription)")
+        }
+
+        if process.terminationStatus != 0 {
+            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+            let errText = String(data: errData, encoding: .utf8) ?? ""
+            return .failure("ffprobe failed (exit \(process.terminationStatus)): \(errText)")
         }
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
+            return .failure("Failed to parse ffprobe output.")
         }
 
         guard let streams = json["streams"] as? [[String: Any]],
               let audioStream = streams.first(where: { ($0["codec_type"] as? String) == "audio" }),
               let format = json["format"] as? [String: Any] else {
-            return nil
+            return .failure("No audio stream found in file.")
         }
 
         let sampleRate = Int(audioStream["sample_rate"] as? String ?? "44100") ?? 44100
@@ -69,7 +107,7 @@ struct CLIBridge {
 
         let filename = URL(fileURLWithPath: path).lastPathComponent
 
-        return AudioFileInfo(
+        return .success(AudioFileInfo(
             path: path,
             filename: filename,
             sampleRate: sampleRate,
@@ -79,14 +117,14 @@ struct CLIBridge {
             hasBWF: hasBWF,
             creationTime: creationTime,
             encodedBy: encodedBy
-        )
+        ))
     }
 
     func run(config: [String: String]) -> AsyncStream<CLIEvent> {
         AsyncStream { continuation in
             Task.detached {
                 guard let scriptPath = CLIBridge.findSonogramScript() else {
-                    continuation.yield(.failed("sonogram script not found"))
+                    continuation.yield(.failed("sonogram script not found. Make sure the app is inside the sonogram repo directory."))
                     continuation.finish()
                     return
                 }
@@ -108,8 +146,11 @@ struct CLIBridge {
                 }
 
                 let process = Process()
-                process.executableURL = URL(fileURLWithPath: scriptPath)
-                process.arguments = ["--config", configPath.path]
+                process.executableURL = URL(fileURLWithPath: "/bin/bash")
+                process.arguments = [scriptPath, "--config", configPath.path]
+                process.environment = ProcessInfo.processInfo.environment.merging(
+                    ["PATH": CLIBridge.enrichedPATH], uniquingKeysWith: { _, new in new }
+                )
 
                 let stdoutPipe = Pipe()
                 let stderrPipe = Pipe()
