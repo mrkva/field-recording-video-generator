@@ -26,6 +26,7 @@ struct ContentView: View {
                             Divider()
 
                             VStack(spacing: 20) {
+                                FormatPickerView()
                                 PresetGridView()
                                 outputSettings
                             }
@@ -42,6 +43,9 @@ struct ContentView: View {
         }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             handleDrop(providers)
+        }
+        .sheet(isPresented: $state.showCoordinatePicker) {
+            CoordinatePickerView(coordinates: $state.coordinates)
         }
     }
 
@@ -64,29 +68,32 @@ struct ContentView: View {
                 }
             }
 
-            Section("Preset") {
-                ForEach(Preset.all) { preset in
-                    Button {
-                        state.selectedPreset = preset
-                    } label: {
-                        HStack {
-                            Image(systemName: preset.icon)
-                                .frame(width: 20)
-                            VStack(alignment: .leading) {
+            Section("Saved Presets") {
+                if state.presetStore.presets.isEmpty {
+                    Text("No presets")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    ForEach(state.presetStore.presets) { preset in
+                        Button {
+                            withAnimation { state.loadPreset(preset) }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(preset.name)
                                     .font(.callout)
-                                Text(preset.dimensionLabel)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if state.selectedPreset.id == preset.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.blue)
+                                HStack(spacing: 4) {
+                                    Text(preset.formatID)
+                                    Text("·")
+                                    Text(preset.specMethod)
+                                    Text("·")
+                                    Text(preset.playbackSpeed)
+                                }
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                             }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
 

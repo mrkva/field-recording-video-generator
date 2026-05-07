@@ -10,8 +10,26 @@ struct MetadataFormView: View {
                          placeholder: "Dawn chorus at oak woodland edge")
                 fieldRow("Location", text: $state.location, field: .location,
                          placeholder: "Ashdown Forest, East Sussex, UK")
-                fieldRow("Coordinates", text: $state.coordinates, field: .coordinates,
-                         placeholder: "51.07, 0.03")
+                HStack {
+                    Text("Coordinates")
+                        .frame(width: 80, alignment: .trailing)
+                        .foregroundStyle(.secondary)
+                    AutocompleteTextField(
+                        text: $state.coordinates,
+                        placeholder: "51.07, 0.03",
+                        suggestions: { prefix in
+                            state.autocomplete.suggestions(for: .coordinates, prefix: prefix)
+                        }
+                    )
+                    Button {
+                        state.showCoordinatePicker = true
+                    } label: {
+                        Image(systemName: "map")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Pick from map")
+                }
                 fieldRow("Recorder", text: $state.recorder, field: .recorder,
                          placeholder: "Zoom H5 + Sennheiser MKH 8020")
 

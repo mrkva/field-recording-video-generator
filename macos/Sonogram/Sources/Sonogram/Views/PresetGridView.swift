@@ -2,76 +2,164 @@ import SwiftUI
 
 struct PresetGridView: View {
     @EnvironmentObject var state: AppState
+    @State private var presetName: String = ""
 
     var body: some View {
-        GroupBox("Format") {
-            LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 10),
-                GridItem(.flexible(), spacing: 10),
-                GridItem(.flexible(), spacing: 10),
-            ], spacing: 10) {
-                ForEach(Preset.all) { preset in
-                    PresetCard(preset: preset, isSelected: state.selectedPreset.id == preset.id)
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                state.selectedPreset = preset
-                            }
+        GroupBox("Presets") {
+            VStack(alignment: .leading, spacing: 10) {
+                if state.presetStore.presets.isEmpty {
+                    Text("No saved presets yet. Configure your settings and save them for quick reuse.")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                } else {
+                    ForEach(state.presetStore.presets) { preset in
+                        PresetRow(preset: preset) {
+                            withAnimation { state.loadPreset(preset) }
+                        } onDelete: {
+                            withAnimation { state.presetStore.delete(preset: preset) }
                         }
+                    }
+                }
+
+                Divider()
+
+                HStack {
+                    Button {
+                        state.showSavePreset = true
+                    } label: {
+                        Label("Save Current Settings", systemImage: "plus.circle")
+                            .font(.callout)
+                    }
+                    .buttonStyle(.borderless)
                 }
             }
             .padding(4)
         }
+        .sheet(isPresented: $state.showSavePreset) {
+            SavePresetSheet()
+        }
     }
 }
 
-struct PresetCard: View {
-    let preset: Preset
-    let isSelected: Bool
+struct PresetRow: View {
+    let preset: UserPreset
+    let onLoad: () -> Void
+    let onDelete: () -> Void
 
     var body: some View {
-        VStack(spacing: 6) {
-            aspectPreview
-                .frame(height: 50)
-                .frame(maxWidth: .infinity)
-
-            Text(preset.name)
-                .font(.caption)
-                .fontWeight(.medium)
-                .lineLimit(1)
-
-            Text(preset.dimensionLabel)
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(preset.name)
+                    .font(.callout)
+                    .fontWeight(.medium)
+                HStack(spacing: 6) {
+                    Text(preset.formatID)
+                    Text("·")
+                    Text(preset.specMethod)
+                    Text("·")
+                    Text("FFT \(preset.fftWindow)")
+                    Text("·")
+                    Text(preset.playbackSpeed)
+                }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                if !preset.subject.isEmpty || !preset.location.isEmpty {
+                    HStack(spacing: 6) {
+                        if !preset.subject.isEmpty {
+                            Text(preset.subject)
+                        }
+                        if !preset.location.isEmpty {
+                            Text("@ \(preset.location)")
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                }
+            }
 
-            Text(preset.aspectLabel)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+            Spacer()
+
+            Button("Load") { onLoad() }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+            Button(role: .destructive) { onDelete() } label: {
+                Image(systemName: "trash")
+                    .font(.caption)
+            }
+            .buttonStyle(.borderless)
         }
-        .padding(8)
-        .background(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.03))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-        )
+        .padding(.vertical, 4)
+    }
+}
+
+struct SavePresetSheet: View {
+    @EnvironmentObject var state: AppState
+    @State private var name: String = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Save Preset")
+                .font(.headline)
+
+            TextField("Preset name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 300)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Saves all current settings:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    settingPill("Format", state.selectedFormat.name)
+                    settingPill("Method", state.specMethod)
+                    settingPill("FFT", "\(state.fftWindow)")
+                    settingPill("Speed", state.playbackSpeed)
+                }
+                HStack(spacing: 12) {
+                    settingPill("Range", "\(state.freqMin)-\(state.freqMax) Hz")
+                    settingPill("Dyn", "\(state.dynamicRange) dB")
+                    settingPill("PPS", "\(state.specPPS)")
+                }
+                if !state.subject.isEmpty {
+                    settingPill("Subject", state.subject)
+                }
+                if !state.location.isEmpty {
+                    settingPill("Location", state.location)
+                }
+            }
+
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") {
+                    let preset = UserPreset(name: name, from: state)
+                    state.presetStore.save(preset: preset)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 400)
     }
 
-    private var aspectPreview: some View {
-        GeometryReader { geo in
-            let maxW = geo.size.width - 8
-            let maxH = geo.size.height - 4
-            let scale = min(maxW / CGFloat(preset.width), maxH / CGFloat(preset.height))
-            let w = CGFloat(preset.width) * scale
-            let h = CGFloat(preset.height) * scale
-
-            RoundedRectangle(cornerRadius: 2)
-                .fill(isSelected ? Color.accentColor.opacity(0.3) : Color.secondary.opacity(0.2))
-                .frame(width: w, height: h)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 2)
-                        .stroke(Color.secondary.opacity(0.4), lineWidth: 0.5)
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    private func settingPill(_ label: String, _ value: String) -> some View {
+        HStack(spacing: 3) {
+            Text(label)
+                .foregroundStyle(.tertiary)
+            Text(value)
         }
+        .font(.caption2)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(.quaternary.opacity(0.3))
+        .clipShape(Capsule())
     }
 }

@@ -84,9 +84,9 @@ struct SpectrogramSettingsView: View {
                         .frame(width: 50)
                 }
 
-                // Pixels per second
+                // Pixels per second (scroll speed)
                 HStack {
-                    Text("Detail")
+                    Text("Speed")
                         .frame(width: 80, alignment: .trailing)
                         .foregroundStyle(.secondary)
                     Slider(value: Binding(

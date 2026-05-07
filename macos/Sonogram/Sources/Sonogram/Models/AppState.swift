@@ -37,11 +37,14 @@ class AppState: ObservableObject {
     @Published var specPPS: Int = 200
 
     // Output settings
-    @Published var selectedPreset: Preset = Preset.all[0]
+    @Published var selectedFormat: VideoFormat = VideoFormat.all[0]
     @Published var playbackSpeed: String = "1x"
     @Published var normalizeAudio: Bool = true
     @Published var photoPath: String = ""
     @Published var outputPath: String = ""
+
+    // Coordinate picker
+    @Published var showCoordinatePicker: Bool = false
 
     // Generation state
     @Published var phase: GenerationPhase = .idle
@@ -49,8 +52,12 @@ class AppState: ObservableObject {
     @Published var isGenerating: Bool = false
     @Published var generatedVideoPath: String?
 
-    // Autocomplete
+    // Presets & autocomplete
+    let presetStore = PresetStore()
     let autocomplete = AutocompleteStore()
+
+    // Save preset sheet
+    @Published var showSavePreset: Bool = false
 
     var fftHint: String {
         if specMethod == "reassigned" {
@@ -112,6 +119,10 @@ class AppState: ObservableObject {
         }
     }
 
+    func loadPreset(_ preset: UserPreset) {
+        preset.apply(to: self)
+    }
+
     func generate() async {
         guard !audioFilePath.isEmpty else { return }
         isGenerating = true
@@ -155,7 +166,7 @@ class AppState: ObservableObject {
         config["DYNAMIC_RANGE"] = String(dynamicRange)
         config["PLAYBACK_SPEED_INPUT"] = playbackSpeed
         config["NORMALIZE_AUDIO"] = normalizeAudio ? "y" : "n"
-        config["PRESET"] = selectedPreset.id
+        config["PRESET"] = selectedFormat.id
         config["PHOTO_PATH"] = photoPath
         config["SHOW_TIMECODE"] = showTimecode ? "y" : "n"
         config["OUTPUT_FILE"] = outputPath
