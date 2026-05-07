@@ -42,16 +42,6 @@ check_dependencies() {
         exit 1
     fi
 
-    # Check drawtext filter availability
-    HAS_DRAWTEXT="n"
-    if ffmpeg -filters 2>/dev/null | grep -q drawtext; then
-        HAS_DRAWTEXT="y"
-    else
-        echo -e "${YELLOW}WARNING: ffmpeg lacks drawtext filter (needs libfreetype).${RESET}" >&2
-        echo -e "${YELLOW}  Scrolling text and timecode overlays will be skipped.${RESET}" >&2
-        echo -e "${YELLOW}  Fix: brew reinstall ffmpeg   (or install with --enable-libfreetype)${RESET}" >&2
-    fi
-
     # Auto-setup bundled venv if needed
     if [[ ! -x "$PYTHON" ]]; then
         echo -e "${CYAN}First run — setting up Python environment...${RESET}" >&2
@@ -958,16 +948,13 @@ build_ffmpeg_command() {
         local combined_label="combined"
     fi
 
-    # Chain of drawtext filters (skipped if ffmpeg lacks drawtext/libfreetype)
-    local dt_in="$combined_label"
-
-    if [[ "$HAS_DRAWTEXT" == "y" ]]; then
-
+    # Chain of drawtext filters
     local dt_font="${LIB_DIR}/VCR_OSD_MONO.ttf"
     if [[ ! -f "$dt_font" ]]; then
         dt_font="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
     fi
 
+    local dt_in="$combined_label"
     local dt_idx=0
 
     # Scrolling text via chained drawtext filters (1 char/sec, like timecode)
@@ -1078,11 +1065,6 @@ print(0)
     else
         filter_complex+="[${dt_in}]format=yuv420p[outv]"
     fi
-
-    else
-        # No drawtext support — skip scrolling text and timecode
-        filter_complex+="[${dt_in}]format=yuv420p[outv]"
-    fi  # HAS_DRAWTEXT
 
     # Build encoding flags from preset overrides
     local -a enc_flags=(-c:v libx264 -preset "$H264_PRESET" -crf "$H264_CRF")
@@ -1442,7 +1424,10 @@ main() {
     fi
 
     # Stage 6: Compose video
+    local ffmpeg_path
+    ffmpeg_path=$(command -v ffmpeg)
     echo -e "  ${CYAN}[6/6]${RESET} Compositing video with ffmpeg..."
+    msg "${DIM}Using: ${ffmpeg_path}${RESET}"
     # Timecode: pass datetime if enabled, empty string otherwise
     local tc_datetime=""
     if [[ "$SHOW_TIMECODE" == "y" || "$SHOW_TIMECODE" == "Y" || "$SHOW_TIMECODE" == "yes" ]]; then

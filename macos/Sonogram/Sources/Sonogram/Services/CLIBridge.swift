@@ -11,22 +11,42 @@ struct ProbeError: Error {
 }
 
 struct CLIBridge {
-    private static let extraPaths = [
+    private static let fallbackPaths = [
         "/opt/homebrew/bin",
         "/usr/local/bin",
         "/opt/local/bin",
     ]
 
-    private static var enrichedPATH: String {
-        let current = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
-        let missing = extraPaths.filter { !current.contains($0) }
-        if missing.isEmpty { return current }
-        return (missing + [current]).joined(separator: ":")
+    private static var _shellPATH: String?
+
+    private static func shellPATH() -> String {
+        if let cached = _shellPATH { return cached }
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: shell)
+        proc.arguments = ["-l", "-c", "echo $PATH"]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let result = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !result.isEmpty {
+                _shellPATH = result
+                return result
+            }
+        } catch {}
+        let base = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        let missing = fallbackPaths.filter { !base.contains($0) }
+        let result = (missing + [base]).joined(separator: ":")
+        _shellPATH = result
+        return result
     }
 
     private static func findExecutable(_ name: String) -> String? {
-        let searchPaths = extraPaths + ["/usr/bin", "/usr/local/bin"]
-        for dir in searchPaths {
+        for dir in shellPATH().split(separator: ":") {
             let path = "\(dir)/\(name)"
             if FileManager.default.isExecutableFile(atPath: path) {
                 return path
@@ -68,7 +88,7 @@ struct CLIBridge {
                 process.arguments = ["-v", "quiet", "-print_format", "json",
                                     "-show_format", "-show_streams", path]
                 process.environment = ProcessInfo.processInfo.environment.merging(
-                    ["PATH": enrichedPATH], uniquingKeysWith: { _, new in new }
+                    ["PATH": shellPATH()], uniquingKeysWith: { _, new in new }
                 )
 
                 let pipe = Pipe()
@@ -162,7 +182,7 @@ struct CLIBridge {
                 process.executableURL = URL(fileURLWithPath: "/bin/bash")
                 process.arguments = [scriptPath, "--config", configPath.path]
                 process.environment = ProcessInfo.processInfo.environment.merging(
-                    ["PATH": CLIBridge.enrichedPATH], uniquingKeysWith: { _, new in new }
+                    ["PATH": CLIBridge.shellPATH()], uniquingKeysWith: { _, new in new }
                 )
 
                 let stdoutPipe = Pipe()
