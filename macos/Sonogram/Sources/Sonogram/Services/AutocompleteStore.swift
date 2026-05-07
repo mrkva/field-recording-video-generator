@@ -37,23 +37,6 @@ class AutocompleteStore: ObservableObject {
         save()
     }
 
-    func suggestions(for field: Field, prefix: String) -> [String] {
-        let list: [String]
-        switch field {
-        case .subject: list = subjects
-        case .location: list = locations
-        case .recorder: list = recorders
-        case .coordinates: list = coordinates
-        }
-        if prefix.isEmpty { return Array(list.prefix(8)) }
-        let lower = prefix.lowercased()
-        return list.filter { $0.lowercased().hasPrefix(lower) }
-    }
-
-    enum Field {
-        case subject, location, recorder, coordinates
-    }
-
     private func load() {
         guard let data = try? Data(contentsOf: storePath),
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: [String]] else {

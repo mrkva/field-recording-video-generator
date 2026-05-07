@@ -56,72 +56,81 @@ struct CLIBridge {
     }
 
     static func probeAudio(path: String) async -> Result<AudioFileInfo, ProbeError> {
-        guard let ffprobe = findExecutable("ffprobe") else {
-            return .failure(ProbeError(message: "ffprobe not found. Install ffmpeg (brew install ffmpeg)."))
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let ffprobe = findExecutable("ffprobe") else {
+                    continuation.resume(returning: .failure(ProbeError(message: "ffprobe not found. Install ffmpeg (brew install ffmpeg).")))
+                    return
+                }
+
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: ffprobe)
+                process.arguments = ["-v", "quiet", "-print_format", "json",
+                                    "-show_format", "-show_streams", path]
+                process.environment = ProcessInfo.processInfo.environment.merging(
+                    ["PATH": enrichedPATH], uniquingKeysWith: { _, new in new }
+                )
+
+                let pipe = Pipe()
+                let errPipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = errPipe
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                } catch {
+                    continuation.resume(returning: .failure(ProbeError(message: "Failed to run ffprobe: \(error.localizedDescription)")))
+                    return
+                }
+
+                if process.terminationStatus != 0 {
+                    let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+                    let errText = String(data: errData, encoding: .utf8) ?? ""
+                    continuation.resume(returning: .failure(ProbeError(message: "ffprobe failed (exit \(process.terminationStatus)): \(errText)")))
+                    return
+                }
+
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    continuation.resume(returning: .failure(ProbeError(message: "Failed to parse ffprobe output.")))
+                    return
+                }
+
+                guard let streams = json["streams"] as? [[String: Any]],
+                      let audioStream = streams.first(where: { ($0["codec_type"] as? String) == "audio" }),
+                      let format = json["format"] as? [String: Any] else {
+                    continuation.resume(returning: .failure(ProbeError(message: "No audio stream found in file.")))
+                    return
+                }
+
+                let sampleRate = Int(audioStream["sample_rate"] as? String ?? "44100") ?? 44100
+                let channels = audioStream["channels"] as? Int ?? 1
+                let bitsPerSample = audioStream["bits_per_raw_sample"] as? String ?? audioStream["bits_per_sample"] as? String
+                let bitDepth = Int(bitsPerSample ?? "16") ?? 16
+                let duration = Double(format["duration"] as? String ?? "0") ?? 0
+
+                let tags = format["tags"] as? [String: String] ?? [:]
+                let creationTime = tags["creation_time"] ?? tags["date"]
+                let encodedBy = tags["encoded_by"]
+                let timeRef = tags["time_reference"]
+                let hasBWF = creationTime != nil || timeRef != nil
+
+                let filename = URL(fileURLWithPath: path).lastPathComponent
+
+                continuation.resume(returning: .success(AudioFileInfo(
+                    path: path,
+                    filename: filename,
+                    sampleRate: sampleRate,
+                    channels: channels,
+                    bitDepth: bitDepth,
+                    duration: duration,
+                    hasBWF: hasBWF,
+                    creationTime: creationTime,
+                    encodedBy: encodedBy
+                )))
+            }
         }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: ffprobe)
-        process.arguments = ["-v", "quiet", "-print_format", "json",
-                            "-show_format", "-show_streams", path]
-        process.environment = ProcessInfo.processInfo.environment.merging(
-            ["PATH": enrichedPATH], uniquingKeysWith: { _, new in new }
-        )
-
-        let pipe = Pipe()
-        let errPipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = errPipe
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return .failure(ProbeError(message: "Failed to run ffprobe: \(error.localizedDescription)"))
-        }
-
-        if process.terminationStatus != 0 {
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-            let errText = String(data: errData, encoding: .utf8) ?? ""
-            return .failure(ProbeError(message: "ffprobe failed (exit \(process.terminationStatus)): \(errText)"))
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return .failure(ProbeError(message: "Failed to parse ffprobe output."))
-        }
-
-        guard let streams = json["streams"] as? [[String: Any]],
-              let audioStream = streams.first(where: { ($0["codec_type"] as? String) == "audio" }),
-              let format = json["format"] as? [String: Any] else {
-            return .failure(ProbeError(message: "No audio stream found in file."))
-        }
-
-        let sampleRate = Int(audioStream["sample_rate"] as? String ?? "44100") ?? 44100
-        let channels = audioStream["channels"] as? Int ?? 1
-        let bitsPerSample = audioStream["bits_per_raw_sample"] as? String ?? audioStream["bits_per_sample"] as? String
-        let bitDepth = Int(bitsPerSample ?? "16") ?? 16
-        let duration = Double(format["duration"] as? String ?? "0") ?? 0
-
-        let tags = format["tags"] as? [String: String] ?? [:]
-        let creationTime = tags["creation_time"] ?? tags["date"]
-        let encodedBy = tags["encoded_by"]
-        let timeRef = tags["time_reference"]
-        let hasBWF = creationTime != nil || timeRef != nil
-
-        let filename = URL(fileURLWithPath: path).lastPathComponent
-
-        return .success(AudioFileInfo(
-            path: path,
-            filename: filename,
-            sampleRate: sampleRate,
-            channels: channels,
-            bitDepth: bitDepth,
-            duration: duration,
-            hasBWF: hasBWF,
-            creationTime: creationTime,
-            encodedBy: encodedBy
-        ))
     }
 
     func run(config: [String: String]) -> AsyncStream<CLIEvent> {
