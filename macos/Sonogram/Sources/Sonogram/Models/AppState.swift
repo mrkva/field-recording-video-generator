@@ -42,6 +42,7 @@ class AppState: ObservableObject {
     @Published var normalizeAudio: Bool = true
     @Published var photoPath: String = ""
     @Published var outputPath: String = ""
+    @Published var openAfterExport: Bool = false
 
     // Coordinate picker
     @Published var showCoordinatePicker: Bool = false

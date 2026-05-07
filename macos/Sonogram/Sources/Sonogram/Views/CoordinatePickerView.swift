@@ -89,37 +89,33 @@ struct CoordinatePickerView: View {
                 .padding(.top, 4)
             }
 
-            Map(position: $position, interactionModes: [.pan, .zoom]) {
-                if pinPlaced {
-                    Marker("", coordinate: CLLocationCoordinate2D(latitude: selectedLat, longitude: selectedLon))
-                        .tint(.red)
-                }
-            }
-            .mapStyle(.standard(elevation: .flat))
-            .onTapGesture { location in
-                // MapKit tap gesture doesn't give us coordinates directly in SwiftUI Map,
-                // so we use the MapReader approach below
-            }
-            .overlay(alignment: .center) {
-                if !pinPlaced {
-                    Image(systemName: "plus")
-                        .font(.title3)
-                        .foregroundStyle(.secondary.opacity(0.6))
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                VStack(spacing: 8) {
-                    Button {
-                        placeAtCenter()
-                    } label: {
-                        Label("Pin Center", systemImage: "mappin.and.ellipse")
-                            .font(.caption)
+            MapReader { reader in
+                Map(position: $position, interactionModes: [.pan, .zoom]) {
+                    if pinPlaced {
+                        Marker("", coordinate: CLLocationCoordinate2D(latitude: selectedLat, longitude: selectedLon))
+                            .tint(.red)
                     }
-                    .buttonStyle(.bordered)
-                    .background(.regularMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .padding(12)
+                .mapStyle(.standard(elevation: .flat))
+                .onTapGesture { screenPoint in
+                    if let coord = reader.convert(screenPoint, from: .local) {
+                        selectedLat = coord.latitude
+                        selectedLon = coord.longitude
+                        pinPlaced = true
+                    }
+                }
+                .overlay(alignment: .center) {
+                    if !pinPlaced {
+                        VStack(spacing: 4) {
+                            Image(systemName: "plus")
+                                .font(.title3)
+                                .foregroundStyle(.secondary.opacity(0.6))
+                            Text("Click to place pin")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -204,9 +200,5 @@ struct CoordinatePickerView: View {
         searchResults = []
         searchText = item.name ?? ""
         position = .camera(MapCamera(centerCoordinate: coord, distance: 5000))
-    }
-
-    private func placeAtCenter() {
-        pinPlaced = true
     }
 }

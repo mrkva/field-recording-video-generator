@@ -214,6 +214,13 @@ struct ContentView: View {
                 }
 
                 HStack {
+                    Text("")
+                        .frame(width: 80)
+                    Toggle("Open after export", isOn: $state.openAfterExport)
+                    Spacer()
+                }
+
+                HStack {
                     Text("Photo")
                         .frame(width: 80, alignment: .trailing)
                     TextField("Optional photo path", text: $state.photoPath)

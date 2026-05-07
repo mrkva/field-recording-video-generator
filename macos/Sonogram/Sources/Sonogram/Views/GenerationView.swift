@@ -1,5 +1,4 @@
 import SwiftUI
-import AVKit
 
 struct GenerationView: View {
     @EnvironmentObject var state: AppState
@@ -7,7 +6,9 @@ struct GenerationView: View {
     var body: some View {
         VStack(spacing: 0) {
             if state.phase == .done, let videoPath = state.generatedVideoPath {
-                videoPreview(path: videoPath)
+                completionView(path: videoPath)
+            } else if state.phase == .failed {
+                failedView
             } else {
                 progressView
             }
@@ -35,6 +36,24 @@ struct GenerationView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
+    }
+
+    private var failedView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 48))
+                .foregroundStyle(.red)
+            Text("Generation failed")
+                .font(.title3)
+            Button("Back to Settings") {
+                state.phase = .idle
+                state.generatedVideoPath = nil
+            }
+            .buttonStyle(.borderedProminent)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var pipelineSteps: some View {
@@ -96,29 +115,30 @@ struct GenerationView: View {
         }
     }
 
-    private func videoPreview(path: String) -> some View {
-        VStack(spacing: 12) {
-            let url = URL(fileURLWithPath: path)
-            if FileManager.default.fileExists(atPath: path) {
-                VideoPlayer(player: AVPlayer(url: url))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .padding()
-            } else {
-                VStack {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 48))
-                        .foregroundStyle(.green)
-                    Text("Video generated")
-                        .font(.title3)
-                    Text(path)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+    private func completionView(path: String) -> some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 56))
+                .foregroundStyle(.green)
+
+            Text("Video generated")
+                .font(.title2)
+                .fontWeight(.medium)
+
+            Text(URL(fileURLWithPath: path).lastPathComponent)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Text(path)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(maxWidth: 500)
+
+            Spacer()
 
             HStack(spacing: 12) {
                 Button("Show in Finder") {
@@ -126,8 +146,8 @@ struct GenerationView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button("Open") {
-                    NSWorkspace.shared.open(url)
+                Button("Open in Player") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: path))
                 }
                 .buttonStyle(.bordered)
 
@@ -140,8 +160,14 @@ struct GenerationView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            if state.openAfterExport {
+                NSWorkspace.shared.open(URL(fileURLWithPath: path))
+            }
         }
     }
 
@@ -160,28 +186,21 @@ struct GenerationView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 1) {
-                        ForEach(Array(state.progressLog.enumerated()), id: \.offset) { index, line in
-                            Text(line)
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(line.contains("ERROR") ? .red : .secondary)
-                                .id(index)
-                                .textSelection(.enabled)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                }
-                .frame(height: 120)
-                .background(.black.opacity(0.03))
-                .onChange(of: state.progressLog.count) { _, _ in
-                    if let last = state.progressLog.indices.last {
-                        proxy.scrollTo(last, anchor: .bottom)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    ForEach(state.progressLog.indices, id: \.self) { index in
+                        Text(state.progressLog[index])
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(state.progressLog[index].contains("ERROR") ? .red : .secondary)
+                            .textSelection(.enabled)
                     }
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
             }
+            .frame(height: 120)
+            .background(.black.opacity(0.03))
+            .defaultScrollAnchor(.bottom)
         }
     }
 }
