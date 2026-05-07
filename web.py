@@ -364,12 +364,13 @@ Image.fromarray(pixels).save('{cursor_png}')
         output_file = os.path.join(str(OUTPUT_DIR), f"{job_id}.mp4")
 
         sfps = str(fps)
+        # thread_queue_size avoids ffmpeg 7.x scheduler stalls on image inputs.
         inputs = [
-            "-framerate", sfps, "-loop", "1", "-i", spec_png,
-            "-framerate", sfps, "-loop", "1", "-i", info_png,
-            "-i", prepared_audio,
-            "-framerate", sfps, "-loop", "1", "-i", cursor_png,
-            "-framerate", sfps, "-loop", "1", "-i", freq_scale_png,
+            "-thread_queue_size", "1024", "-framerate", sfps, "-loop", "1", "-i", spec_png,
+            "-thread_queue_size", "1024", "-framerate", sfps, "-loop", "1", "-i", info_png,
+            "-thread_queue_size", "1024", "-i", prepared_audio,
+            "-thread_queue_size", "1024", "-framerate", sfps, "-loop", "1", "-i", cursor_png,
+            "-thread_queue_size", "1024", "-framerate", sfps, "-loop", "1", "-i", freq_scale_png,
         ]
 
         fc = (
@@ -405,6 +406,9 @@ Image.fromarray(pixels).save('{cursor_png}')
         if "AUDIO_CHANNELS" in preset:
             enc_flags += ["-ac", str(preset["AUDIO_CHANNELS"])]
 
+        # -t bounds the duration; -shortest is omitted — in ffmpeg 7.x it can
+        # propagate EOF before the AAC encoder receives a frame, producing
+        # "Could not open encoder before EOF" and an empty file.
         ffmpeg_cmd = [
             "ffmpeg", "-y", "-v", "warning",
             *inputs,
@@ -414,7 +418,6 @@ Image.fromarray(pixels).save('{cursor_png}')
             "-r", str(fps),
             "-t", str(effective_duration),
             "-movflags", "+faststart",
-            "-shortest",
             output_file,
         ]
         subprocess.run(ffmpeg_cmd, check=True, capture_output=True)

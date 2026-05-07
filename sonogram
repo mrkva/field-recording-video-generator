@@ -438,7 +438,6 @@ recorder = equip.get('recorder', {}) or {}
 mics = equip.get('microphones', []) or []
 rec_model = recorder.get('model', '')
 mic_models = [m.get('model', '') for m in mics if m.get('model')]
-# Deduplicate: if all mics are the same model, show "Model (PAIR)" or "Model (x3)"
 unique_mics = list(dict.fromkeys(mic_models))
 if len(mic_models) > 1 and len(unique_mics) == 1:
     mic_str = unique_mics[0] + (' (PAIR)' if len(mic_models) == 2 else f' (x{len(mic_models)})')
@@ -892,22 +891,23 @@ build_ffmpeg_command() {
     local filter_complex=""
     local inputs=()
 
-    inputs+=(-framerate "$fps" -loop 1 -i "$spec_png")       # [0] spectrogram
-    inputs+=(-framerate "$fps" -loop 1 -i "$info_png")       # [1] info panel
-    inputs+=(-i "$audio")                                    # [2] audio
-    inputs+=(-framerate "$fps" -loop 1 -i "$cursor_png")     # [3] cursor
-    inputs+=(-framerate "$fps" -loop 1 -i "$freq_scale_png") # [4] frequency scale overlay
+    # thread_queue_size avoids ffmpeg 7.x scheduler stalls on the image inputs.
+    inputs+=(-thread_queue_size 1024 -framerate "$fps" -loop 1 -i "$spec_png")       # [0] spectrogram
+    inputs+=(-thread_queue_size 1024 -framerate "$fps" -loop 1 -i "$info_png")       # [1] info panel
+    inputs+=(-thread_queue_size 1024 -i "$audio")                                    # [2] audio
+    inputs+=(-thread_queue_size 1024 -framerate "$fps" -loop 1 -i "$cursor_png")     # [3] cursor
+    inputs+=(-thread_queue_size 1024 -framerate "$fps" -loop 1 -i "$freq_scale_png") # [4] frequency scale overlay
 
     local next_idx=5
     local photo_idx=""
     local map_anim_idx=""
     if [[ -n "$photo" ]]; then
-        inputs+=(-framerate "$fps" -loop 1 -i "$photo")
+        inputs+=(-thread_queue_size 1024 -framerate "$fps" -loop 1 -i "$photo")
         photo_idx="$next_idx"
         next_idx=$((next_idx + 1))
     fi
     if [[ -n "$map_frames_dir" && -d "$map_frames_dir" ]]; then
-        inputs+=(-framerate "$fps" -i "${map_frames_dir}/map_%06d.png")
+        inputs+=(-thread_queue_size 1024 -framerate "$fps" -i "${map_frames_dir}/map_%06d.png")
         map_anim_idx="$next_idx"
         next_idx=$((next_idx + 1))
     fi
@@ -1077,6 +1077,9 @@ print(0)
     if [[ -n "$AUDIO_SAMPLE_RATE" ]]; then enc_flags+=(-ar "$AUDIO_SAMPLE_RATE"); fi
     if [[ -n "$AUDIO_CHANNELS" ]]; then enc_flags+=(-ac "$AUDIO_CHANNELS"); fi
 
+    # -t bounds the duration; -shortest is omitted — in ffmpeg 7.x it can
+    # propagate EOF before the AAC encoder receives a frame, producing
+    # "Could not open encoder before EOF" and an empty file.
     ffmpeg -y -v warning -stats_period 0.5 -progress pipe:1 \
         "${inputs[@]}" \
         -filter_complex "$filter_complex" \
@@ -1085,7 +1088,6 @@ print(0)
         -r "$fps" \
         -t "$duration" \
         -movflags +faststart \
-        -shortest \
         "$output" | "$PYTHON" -c "
 import sys
 
