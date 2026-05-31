@@ -50,18 +50,25 @@ struct SpectrogramSettingsView: View {
                         .frame(width: 80, alignment: .trailing)
                         .foregroundStyle(.secondary)
                     HStack(spacing: 4) {
-                        TextField("20", value: $state.freqMin, format: .number)
+                        // .grouping(.never) keeps "96000" round-tripping as
+                        // plain digits — with locale grouping enabled,
+                        // "96 000" parsed back as just "96" because the
+                        // thin-space separator broke the input.
+                        TextField("20", value: $state.freqMin, format: .number.grouping(.never))
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
                         Text("–")
-                        TextField("22050", value: $state.freqMax, format: .number)
+                        TextField("22050", value: $state.freqMax, format: .number.grouping(.never))
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 70)
                         Text("Hz")
                             .foregroundStyle(.secondary)
                     }
                     if let file = state.audioFile {
-                        Text("(Nyquist: \(file.nyquist) Hz)")
+                        // String() avoids SwiftUI's LocalizedStringKey
+                        // auto-grouping (which prints "96 000" in cs/fr) so
+                        // the hint matches what the no-grouping field accepts.
+                        Text("(Nyquist: \(String(file.nyquist)) Hz)")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
