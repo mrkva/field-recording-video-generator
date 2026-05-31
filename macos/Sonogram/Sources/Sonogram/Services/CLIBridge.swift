@@ -57,8 +57,9 @@ struct CLIBridge {
 
     /// Read the iXML RIFF chunk from a WAV file. Returns the chunk contents
     /// decoded as UTF-8, with trailing NUL padding and any UTF-8 BOM stripped.
-    /// Reads the file header-only via FileHandle so large WAVs aren't loaded
-    /// into memory.
+    /// Walks chunk headers until iXML is found or EOF is reached — some
+    /// recorders (e.g. LOM SoundSpaceTime) place iXML after the audio data,
+    /// so we can't bound the scan by a small size.
     static func readIXML(path: String) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
             return nil
@@ -70,12 +71,7 @@ struct CLIBridge {
               String(data: header[8..<12], encoding: .ascii) == "WAVE"
         else { return nil }
 
-        // Cap how far we'll walk — iXML normally appears before audio data,
-        // but RIFF allows any order. 16 MiB is more than enough.
-        let scanCap: UInt64 = 16 * 1024 * 1024
-        var scanned: UInt64 = 0
-
-        while scanned < scanCap {
+        while true {
             guard let hdr = try? handle.read(upToCount: 8), hdr.count == 8 else { return nil }
             let id = String(data: hdr[0..<4], encoding: .ascii) ?? ""
             let size = hdr[4..<8].withUnsafeBytes { raw -> UInt32 in
@@ -85,7 +81,6 @@ struct CLIBridge {
                 }
                 return UInt32(littleEndian: value)
             }
-            scanned += 8
 
             if id == "iXML" {
                 guard let payload = try? handle.read(upToCount: Int(size)) else { return nil }
@@ -102,9 +97,7 @@ struct CLIBridge {
             } catch {
                 return nil
             }
-            scanned += skip
         }
-        return nil
     }
 
     /// Find a first-match value for a tag in an iXML document. iXML is small
