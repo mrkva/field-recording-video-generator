@@ -55,6 +55,76 @@ struct CLIBridge {
         return nil
     }
 
+    /// Read the iXML RIFF chunk from a WAV file. Returns the chunk contents
+    /// decoded as UTF-8, with trailing NUL padding and any UTF-8 BOM stripped.
+    /// Reads the file header-only via FileHandle so large WAVs aren't loaded
+    /// into memory.
+    static func readIXML(path: String) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        guard let header = try? handle.read(upToCount: 12), header.count == 12,
+              String(data: header[0..<4], encoding: .ascii) == "RIFF",
+              String(data: header[8..<12], encoding: .ascii) == "WAVE"
+        else { return nil }
+
+        // Cap how far we'll walk — iXML normally appears before audio data,
+        // but RIFF allows any order. 16 MiB is more than enough.
+        let scanCap: UInt64 = 16 * 1024 * 1024
+        var scanned: UInt64 = 0
+
+        while scanned < scanCap {
+            guard let hdr = try? handle.read(upToCount: 8), hdr.count == 8 else { return nil }
+            let id = String(data: hdr[0..<4], encoding: .ascii) ?? ""
+            let size = hdr[4..<8].withUnsafeBytes { raw -> UInt32 in
+                var value: UInt32 = 0
+                _ = withUnsafeMutableBytes(of: &value) { dst in
+                    raw.copyBytes(to: dst, count: 4)
+                }
+                return UInt32(littleEndian: value)
+            }
+            scanned += 8
+
+            if id == "iXML" {
+                guard let payload = try? handle.read(upToCount: Int(size)) else { return nil }
+                let stripped = payload.prefix(while: { $0 != 0 })
+                var text = String(data: stripped, encoding: .utf8) ?? ""
+                if text.hasPrefix("\u{feff}") { text.removeFirst() }
+                return text.isEmpty ? nil : text
+            }
+
+            // Skip chunk body, pad to even boundary.
+            let skip = UInt64(size) + UInt64(size % 2)
+            do {
+                try handle.seek(toOffset: handle.offsetInFile + skip)
+            } catch {
+                return nil
+            }
+            scanned += skip
+        }
+        return nil
+    }
+
+    /// Find a first-match value for a tag in an iXML document. iXML is small
+    /// and well-defined, so regex is fine and lets us look both at top-level
+    /// `<KEY>` and nested `<LOCATION><KEY>` paths.
+    static func iXMLValue(_ xml: String, key: String) -> String? {
+        let pattern = "<\(key)[^>]*>(.*?)</\(key)>"
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ) else { return nil }
+        let range = NSRange(xml.startIndex..., in: xml)
+        guard let match = regex.firstMatch(in: xml, range: range),
+              match.numberOfRanges > 1,
+              let inner = Range(match.range(at: 1), in: xml)
+        else { return nil }
+        let value = String(xml[inner]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
     static func probeAudio(path: String) async -> Result<AudioFileInfo, ProbeError> {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -111,10 +181,52 @@ struct CLIBridge {
                 let duration = Double(format["duration"] as? String ?? "0") ?? 0
 
                 let tags = format["tags"] as? [String: String] ?? [:]
-                let creationTime = tags["creation_time"] ?? tags["date"]
                 let encodedBy = tags["encoded_by"]
                 let timeRef = tags["time_reference"]
-                let hasBWF = creationTime != nil || timeRef != nil
+
+                // Compose full BWF datetime: origination_date + (time_reference→time
+                // or origination_time or creation_time). time_reference (samples
+                // since midnight) is preferred because editors update it when
+                // trimming the file, while creation_time often stays stale.
+                let origDate = tags["origination_date"] ?? tags["date"]
+                let origTime = tags["origination_time"]
+                let creationTime = tags["creation_time"]
+
+                var derivedTime: String? = nil
+                if let tr = timeRef, let trInt = Int(tr), sampleRate > 0 {
+                    let totalSecs = Double(trInt) / Double(sampleRate)
+                    let h = Int(totalSecs) / 3600
+                    let m = (Int(totalSecs) % 3600) / 60
+                    let s = Int(totalSecs) % 60
+                    derivedTime = String(format: "%02d:%02d:%02d", h, m, s)
+                }
+
+                var fullDateTime: String? = nil
+                if let date = origDate, date.count >= 10 {
+                    let cleanDate = String(date.prefix(10)).replacingOccurrences(of: ":", with: "-")
+                    let timeStr = derivedTime ?? origTime ?? creationTime
+                    if let t = timeStr {
+                        if t.count >= 8 {
+                            fullDateTime = "\(cleanDate)T\(String(t.prefix(8)))"
+                        } else if t.count >= 5 {
+                            fullDateTime = "\(cleanDate)T\(String(t.prefix(5))):00"
+                        } else {
+                            fullDateTime = "\(cleanDate)T00:00:00"
+                        }
+                    } else {
+                        fullDateTime = "\(cleanDate)T00:00:00"
+                    }
+                } else if let ct = creationTime, !ct.isEmpty {
+                    fullDateTime = ct
+                }
+
+                let hasBWF = fullDateTime != nil || timeRef != nil
+
+                // iXML chunk — extract LOCATION_GPS / LOCATION_NAME / SCENE.
+                let ixml = Self.readIXML(path: path)
+                let coordinates = ixml.flatMap { Self.iXMLValue($0, key: "LOCATION_GPS") }
+                let ixmlLocation = ixml.flatMap { Self.iXMLValue($0, key: "LOCATION_NAME") }
+                let ixmlScene = ixml.flatMap { Self.iXMLValue($0, key: "SCENE") }
 
                 let filename = URL(fileURLWithPath: path).lastPathComponent
 
@@ -126,8 +238,11 @@ struct CLIBridge {
                     bitDepth: bitDepth,
                     duration: duration,
                     hasBWF: hasBWF,
-                    creationTime: creationTime,
-                    encodedBy: encodedBy
+                    creationTime: fullDateTime,
+                    encodedBy: encodedBy,
+                    coordinates: coordinates,
+                    iXMLLocation: ixmlLocation,
+                    iXMLScene: ixmlScene
                 )))
             }
         }

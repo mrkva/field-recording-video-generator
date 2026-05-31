@@ -42,6 +42,17 @@ check_dependencies() {
         exit 1
     fi
 
+    # Check drawtext filter availability — needs libfreetype-enabled ffmpeg.
+    # Homebrew's default bottle is built without it on many setups.
+    HAS_DRAWTEXT="n"
+    if ffmpeg -filters 2>/dev/null | grep -q drawtext; then
+        HAS_DRAWTEXT="y"
+    else
+        echo -e "${YELLOW}WARNING: ffmpeg lacks drawtext filter (needs libfreetype).${RESET}" >&2
+        echo -e "${YELLOW}  Scrolling text and running timecode will be skipped.${RESET}" >&2
+        echo -e "${YELLOW}  Fix: brew reinstall ffmpeg   (or build with --enable-libfreetype)${RESET}" >&2
+    fi
+
     # Auto-setup bundled venv if needed
     if [[ ! -x "$PYTHON" ]]; then
         echo -e "${CYAN}First run — setting up Python environment...${RESET}" >&2
@@ -948,13 +959,15 @@ build_ffmpeg_command() {
         local combined_label="combined"
     fi
 
-    # Chain of drawtext filters
+    # Chain of drawtext filters (skipped entirely if ffmpeg lacks drawtext).
+    local dt_in="$combined_label"
+    if [[ "$HAS_DRAWTEXT" == "y" ]]; then
+
     local dt_font="${LIB_DIR}/VCR_OSD_MONO.ttf"
     if [[ ! -f "$dt_font" ]]; then
         dt_font="/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
     fi
 
-    local dt_in="$combined_label"
     local dt_idx=0
 
     # Scrolling text via chained drawtext filters (1 char/sec, like timecode)
@@ -1065,6 +1078,11 @@ print(0)
     else
         filter_complex+="[${dt_in}]format=yuv420p[outv]"
     fi
+
+    else
+        # ffmpeg lacks drawtext — skip scroll + timecode, finalize directly.
+        filter_complex+="[${dt_in}]format=yuv420p[outv]"
+    fi  # HAS_DRAWTEXT
 
     # Build encoding flags from preset overrides
     local -a enc_flags=(-c:v libx264 -preset "$H264_PRESET" -crf "$H264_CRF")

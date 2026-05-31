@@ -106,6 +106,17 @@ class AppState {
             if let ct = info.creationTime, !ct.isEmpty {
                 datetime = ct
             }
+            // Auto-fill from iXML when the user hasn't typed anything yet,
+            // so loading a different file doesn't overwrite their input.
+            if coordinates.isEmpty, let coords = info.coordinates, !coords.isEmpty {
+                coordinates = coords
+            }
+            if location.isEmpty, let loc = info.iXMLLocation, !loc.isEmpty {
+                location = loc
+            }
+            if subject.isEmpty, let scene = info.iXMLScene, !scene.isEmpty {
+                subject = scene
+            }
             showTimecode = info.hasBWF
         case .failure(let error):
             audioFile = nil

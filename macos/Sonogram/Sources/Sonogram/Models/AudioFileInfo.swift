@@ -10,6 +10,9 @@ struct AudioFileInfo {
     let hasBWF: Bool
     let creationTime: String?
     let encodedBy: String?
+    let coordinates: String?
+    let iXMLLocation: String?
+    let iXMLScene: String?
 
     var nyquist: Int { sampleRate / 2 }
 
