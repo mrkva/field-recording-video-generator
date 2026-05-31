@@ -63,7 +63,7 @@ def render_info_panel(output_png, width, font_size,
                       filename="", subject="", recorder="", datetime_str="",
                       location="", playback_speed="", coordinates="",
                       sample_info="", dynamic_time=False, animated_map=False,
-                      max_value_chars=32):
+                      max_value_chars=32, no_scroll=False):
     """Render info panel — NASA/telemetry camera overlay aesthetic.
 
     All caps, monospace, tight layout with technical formatting.
@@ -147,11 +147,13 @@ def render_info_panel(output_png, width, font_size,
     fits = int(max_value_w / char_w) if char_w > 0 else max_value_chars
     max_value_chars = min(max_value_chars, fits)
 
-    # Check which values overflow and need scrolling
+    # Check which values overflow and need scrolling. When no_scroll is set
+    # (ffmpeg lacks drawtext), draw everything statically — long values just
+    # clip at the column edge rather than animating.
     scroll_fields = []  # list of (label, y_pos, full_text, strip_png) — filled during rendering
     all_lines = []  # list of (label, value_text, needs_scroll)
     for label, value in entries:
-        if len(value) > max_value_chars:
+        if not no_scroll and len(value) > max_value_chars:
             all_lines.append((label, value, True))
         else:
             all_lines.append((label, value, False))
@@ -248,6 +250,8 @@ def main():
                         help='Reserve map space but leave blank for animated overlay')
     parser.add_argument('--max-value-chars', type=int, default=32,
                         help='Max characters for value fields before scrolling')
+    parser.add_argument('--no-scroll', action='store_true',
+                        help='Render all values statically (skip drawtext scroll fallback)')
     args = parser.parse_args()
 
     datetime_str = args.datetime
@@ -274,6 +278,7 @@ def main():
         dynamic_time=args.dynamic_time,
         animated_map=args.animated_map,
         max_value_chars=args.max_value_chars,
+        no_scroll=args.no_scroll,
     )
 
     print(f"panel_height={panel_height}")

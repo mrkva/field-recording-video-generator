@@ -13,6 +13,7 @@ struct AudioFileInfo {
     let coordinates: String?
     let iXMLLocation: String?
     let iXMLScene: String?
+    let iXMLEquipment: String?
 
     var nyquist: Int { sampleRate / 2 }
 

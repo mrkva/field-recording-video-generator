@@ -118,6 +118,66 @@ struct CLIBridge {
         return value.isEmpty ? nil : value
     }
 
+    /// Build an "Equipment" string from iXML, preferring structured tags
+    /// (`AUDIO_RECORDER_MODEL` + `MICROPHONE_MODEL`) and falling back to the
+    /// loosely-formatted `<USER>` block where some recorders write key/value
+    /// pairs like `Recorder: …` / `Microphone: …`.
+    static func parseEquipment(from xml: String) -> String? {
+        let recorder = iXMLValue(xml, key: "AUDIO_RECORDER_MODEL")
+        let microphone = iXMLValue(xml, key: "MICROPHONE_MODEL")
+        if let r = recorder, let m = microphone { return "\(r) + \(m)" }
+        if let r = recorder { return r }
+        if let m = microphone { return m }
+
+        guard let user = iXMLValue(xml, key: "USER") else { return nil }
+
+        var equipment: String?
+        var recordist: String?
+        var mics: [String] = []
+        for raw in user.split(separator: "\n") {
+            let line = String(raw).trimmingCharacters(in: .whitespaces)
+            let lower = line.lowercased()
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            if value.isEmpty { continue }
+
+            if lower.hasPrefix("recordist:") {
+                recordist = value
+            } else if lower.hasPrefix("recorder:") || lower.hasPrefix("equipment:") {
+                // Strip "(fw 1.2.3)" firmware suffixes.
+                equipment = value.replacingOccurrences(
+                    of: #"\s*\(fw[^)]*\)"#,
+                    with: "",
+                    options: .regularExpression
+                )
+            } else if lower.hasPrefix("microphone") || lower.hasPrefix("mic") {
+                for entry in value.split(separator: ";") {
+                    let cleaned = String(entry).trimmingCharacters(in: .whitespaces)
+                    if !cleaned.isEmpty { mics.append(cleaned) }
+                }
+            }
+        }
+
+        let micStr: String
+        if mics.isEmpty {
+            micStr = ""
+        } else {
+            // De-duplicate while preserving order.
+            var seen = Set<String>()
+            let unique = mics.filter { seen.insert($0).inserted }
+            if mics.count > 1 && unique.count == 1 {
+                micStr = "\(unique[0]) (PAIR)"
+            } else {
+                micStr = unique.joined(separator: " + ")
+            }
+        }
+
+        if let eq = equipment, !micStr.isEmpty { return "\(eq) + \(micStr)" }
+        if let eq = equipment { return eq }
+        if !micStr.isEmpty { return micStr }
+        return recordist
+    }
+
     static func probeAudio(path: String) async -> Result<AudioFileInfo, ProbeError> {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -215,11 +275,20 @@ struct CLIBridge {
 
                 let hasBWF = fullDateTime != nil || timeRef != nil
 
-                // iXML chunk — extract LOCATION_GPS / LOCATION_NAME / SCENE.
+                // iXML chunk — pull every field we know how to use.
                 let ixml = Self.readIXML(path: path)
                 let coordinates = ixml.flatMap { Self.iXMLValue($0, key: "LOCATION_GPS") }
-                let ixmlLocation = ixml.flatMap { Self.iXMLValue($0, key: "LOCATION_NAME") }
+                let locName = ixml.flatMap { Self.iXMLValue($0, key: "LOCATION_NAME") }
+                let locRegion = ixml.flatMap { Self.iXMLValue($0, key: "LOCATION_REGION") }
+                let ixmlLocation: String?
+                switch (locName, locRegion) {
+                case let (name?, region?): ixmlLocation = "\(name), \(region)"
+                case let (name?, nil):     ixmlLocation = name
+                case let (nil, region?):   ixmlLocation = region
+                default:                   ixmlLocation = nil
+                }
                 let ixmlScene = ixml.flatMap { Self.iXMLValue($0, key: "SCENE") }
+                let ixmlEquipment = ixml.flatMap { Self.parseEquipment(from: $0) }
 
                 let filename = URL(fileURLWithPath: path).lastPathComponent
 
@@ -235,7 +304,8 @@ struct CLIBridge {
                     encodedBy: encodedBy,
                     coordinates: coordinates,
                     iXMLLocation: ixmlLocation,
-                    iXMLScene: ixmlScene
+                    iXMLScene: ixmlScene,
+                    iXMLEquipment: ixmlEquipment
                 )))
             }
         }

@@ -1341,9 +1341,18 @@ main() {
     echo -e "  ${CYAN}[2/5]${RESET} Rendering info panel..."
     local info_png="${TMPDIR}/info_panel.png"
     local panel_output
+    # --dynamic-time and scrolling both rely on the ffmpeg drawtext filter to
+    # draw the real value. If ffmpeg lacks drawtext, the panel would leave
+    # those fields blank — so when HAS_DRAWTEXT=n we render everything
+    # statically into the panel image instead.
     local dynamic_time_flag=""
-    if [[ "$SHOW_TIMECODE" == "y" || "$SHOW_TIMECODE" == "Y" || "$SHOW_TIMECODE" == "yes" ]]; then
-        dynamic_time_flag="--dynamic-time"
+    local no_scroll_flag=""
+    if [[ "$HAS_DRAWTEXT" == "y" ]]; then
+        if [[ "$SHOW_TIMECODE" == "y" || "$SHOW_TIMECODE" == "Y" || "$SHOW_TIMECODE" == "yes" ]]; then
+            dynamic_time_flag="--dynamic-time"
+        fi
+    else
+        no_scroll_flag="--no-scroll"
     fi
     local animated_map_flag=""
     if [[ -n "$META_COORDINATES" ]]; then
@@ -1363,7 +1372,7 @@ main() {
         --sample-info "${AUDIO_SAMPLE_RATE}HZ ${AUDIO_BIT_DEPTH}BIT${AUDIO_FORMAT:+ $AUDIO_FORMAT}" \
         --coordinates "$META_COORDINATES" \
         --max-value-chars "${MAX_VALUE_CHARS:-32}" \
-        $dynamic_time_flag $animated_map_flag)
+        $dynamic_time_flag $animated_map_flag $no_scroll_flag)
 
     # Extract auto-calculated panel height and timecode position
     local INFO_PANEL_HEIGHT

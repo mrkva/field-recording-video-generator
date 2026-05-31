@@ -100,14 +100,20 @@ class AppState {
         case .success(let info):
             audioFile = info
             freqMax = info.nyquist
-            if let enc = info.encodedBy, !enc.isEmpty {
-                recorder = enc
-            }
             if let ct = info.creationTime, !ct.isEmpty {
                 datetime = ct
             }
             // Auto-fill from iXML when the user hasn't typed anything yet,
             // so loading a different file doesn't overwrite their input.
+            // Equipment prefers iXML's structured AUDIO_RECORDER_MODEL +
+            // MICROPHONE_MODEL over BWF's plain encoded_by tag.
+            if recorder.isEmpty {
+                if let eq = info.iXMLEquipment, !eq.isEmpty {
+                    recorder = eq
+                } else if let enc = info.encodedBy, !enc.isEmpty {
+                    recorder = enc
+                }
+            }
             if coordinates.isEmpty, let coords = info.coordinates, !coords.isEmpty {
                 coordinates = coords
             }
