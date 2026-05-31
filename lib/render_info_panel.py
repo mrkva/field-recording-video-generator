@@ -169,6 +169,7 @@ def render_info_panel(output_png, width, font_size,
 
     timecode_x = 0
     timecode_y = 0
+    timecode_static_y = 0
     y = padding_y
     for i, (label, text, needs_scroll) in enumerate(all_lines):
         if i > 0:
@@ -182,6 +183,7 @@ def render_info_panel(output_png, width, font_size,
         if dynamic_time and label == "TIME":
             timecode_x = int(value_x)
             timecode_y = int(y + drawtext_y_offset)
+            timecode_static_y = int(y)
         elif needs_scroll:
             # Record scroll field for drawtext animation in ffmpeg
             scroll_fields.append((label, int(y + drawtext_y_offset), text))
@@ -226,7 +228,7 @@ def render_info_panel(output_png, width, font_size,
               fill=separator_color, width=1)
 
     img.save(output_png)
-    return (total_h, timecode_x, timecode_y, scroll_fields,
+    return (total_h, timecode_x, timecode_y, timecode_static_y, scroll_fields,
             int(value_x), max_value_chars,
             map_overlay_x, map_overlay_y, map_overlay_size)
 
@@ -262,7 +264,7 @@ def main():
         else:
             datetime_str = "UNKNOWN"
 
-    (panel_height, tc_x, tc_y, scroll_fields, val_x, max_chars,
+    (panel_height, tc_x, tc_y, tc_static_y, scroll_fields, val_x, max_chars,
      map_x, map_y, map_size) = render_info_panel(
         output_png=args.output,
         width=args.width,
@@ -285,6 +287,7 @@ def main():
     if args.dynamic_time:
         print(f"timecode_x={tc_x}")
         print(f"timecode_y={tc_y}")
+        print(f"timecode_static_y={tc_static_y}")
     if args.animated_map and map_size > 0:
         print(f"map_x={map_x}")
         print(f"map_y={map_y}")
