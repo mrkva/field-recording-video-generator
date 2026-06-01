@@ -707,13 +707,24 @@ parse_playback_speed() {
         return
     fi
 
+    # Format a number tightly: drop trailing zeros, but keep up to 2 decimals
+    # for non-integer results. 8.000000 → "8", 4.351852 → "4.35".
+    local _fmt_n
+    _fmt_n() {
+        "$PYTHON" -c "
+v = float('$1')
+s = f'{v:.2f}'.rstrip('0').rstrip('.')
+print(s)
+"
+    }
+
     # SOURCE:TARGET — explicit rate reinterpretation.
     if [[ "$input" == *":"* ]]; then
         local source_rate="${input%%:*}"
         local target_rate="${input##*:}"
         SPEED_FACTOR=$("$PYTHON" -c "print(f'{${source_rate}/${target_rate}:.6f}')")
         EFFECTIVE_RATE="$target_rate"
-        PLAYBACK_LABEL="${source_rate}Hz → ${target_rate}Hz (${SPEED_FACTOR}× slower)"
+        PLAYBACK_LABEL="${source_rate}Hz → ${target_rate}Hz ($(_fmt_n "$SPEED_FACTOR")x slower)"
         return
     fi
 
@@ -729,11 +740,11 @@ parse_playback_speed() {
     if [[ "$is_speed_mult" == "1" ]]; then
         SPEED_FACTOR=$("$PYTHON" -c "print(f'{1.0/${input}:.6f}')")
         EFFECTIVE_RATE=$("$PYTHON" -c "print(int(${orig_sr} * ${input}))")
-        PLAYBACK_LABEL="${input}× speed (${SPEED_FACTOR}× slower)"
+        PLAYBACK_LABEL="$(_fmt_n "$SPEED_FACTOR")x slower"
     else
         SPEED_FACTOR="$input"
         EFFECTIVE_RATE=$("$PYTHON" -c "print(int(${orig_sr} / ${input}))")
-        PLAYBACK_LABEL="${input}× slower"
+        PLAYBACK_LABEL="$(_fmt_n "$input")x slower"
     fi
 }
 
