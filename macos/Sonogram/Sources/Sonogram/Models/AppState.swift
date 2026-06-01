@@ -68,9 +68,15 @@ class AppState {
 
     var estimatedDuration: Double? {
         guard let file = audioFile else { return nil }
-        let speed = parseSpeed(playbackSpeed)
-        guard speed > 0 else { return nil }
-        return file.duration / speed
+        let n = parseSpeed(playbackSpeed)
+        guard n > 0 else { return nil }
+        // Match the bash side's heuristic exactly:
+        //   n  < 1: playback-speed multiplier → output = duration / n
+        //   n >= 1: slowdown factor           → output = duration × n
+        // Both interpretations slow the audio down; entries >= 1 keep the
+        // legacy "Nx slower" CLI meaning, while < 1 reads as "Nx speed".
+        let slowdown = n < 1 ? 1.0 / n : n
+        return file.duration * slowdown
     }
 
     var estimatedDurationFormatted: String {
