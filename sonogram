@@ -1118,7 +1118,12 @@ for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M', '%Y-%m-%
 print(0)
 ")
 
-        if [[ "$tc_epoch" != "0" ]]; then
+        if [[ "$tc_epoch" != "0" && -z "$tc_frames_dir" ]]; then
+            # drawtext-based timecode: setpts trick scales PTS so localtime
+            # advances by speed_factor. Only used when not slowing down (or
+            # when caller didn't pre-render TC frames) — under ffmpeg 7.x's
+            # threaded scheduler this setpts pair leaks back into upstream
+            # filters' `n` accounting and jitters the cursor overlay.
             filter_complex+="[${dt_in}]setpts=PTS/${speed_factor}[tc_scaled];"
             filter_complex+="[tc_scaled]drawtext="
             filter_complex+="fontfile=${dt_font}:"
@@ -1130,6 +1135,8 @@ print(0)
             filter_complex+="[tc_drawn]setpts=PTS*${speed_factor}[final_dt];"
             filter_complex+="[final_dt]format=yuv420p[outv]"
         else
+            # Either no timecode requested, or tc_frames image-sequence is
+            # already overlaying it from earlier in the chain.
             filter_complex+="[${dt_in}]format=yuv420p[outv]"
         fi
     else
@@ -1512,15 +1519,26 @@ main() {
         echo -e "  ${CYAN}[5/6]${RESET} ${DIM}Map animation skipped (no coordinates)${RESET}"
     fi
 
-    # Pre-render timecode PNG sequence when ffmpeg can't drawtext at runtime.
-    # render_timecode.py emits one frame per second of video, with the
-    # speed_factor already baked in, so a `-framerate 1` image-sequence input
-    # ticks at the right pace when overlaid.
+    # Pre-render timecode PNG sequence:
+    #   - whenever ffmpeg lacks drawtext (only option), OR
+    #   - when slowdown is in effect AND drawtext is available — the drawtext
+    #     path needs `setpts=PTS/${speed_factor}` to make `localtime` tick at
+    #     the recording-time rate, and that setpts pair perturbs ffmpeg 7.x's
+    #     threaded scheduler enough to jitter the cursor overlay (~SPEED_FACTOR
+    #     px ahead every SPEED_FACTOR frames). The PNG-overlay path has the
+    #     speed_factor baked in by render_timecode.py instead, so no setpts.
     local TC_FRAMES_DIR=""
-    if [[ "$HAS_DRAWTEXT" != "y" \
-          && ( "$SHOW_TIMECODE" == "y" || "$SHOW_TIMECODE" == "Y" || "$SHOW_TIMECODE" == "yes" ) \
+    local needs_tc_frames="n"
+    if [[ ( "$SHOW_TIMECODE" == "y" || "$SHOW_TIMECODE" == "Y" || "$SHOW_TIMECODE" == "yes" ) \
           && -n "$TIMECODE_X" && "$TIMECODE_X" != "0" \
           && -n "$META_DATETIME" ]]; then
+        if [[ "$HAS_DRAWTEXT" != "y" ]]; then
+            needs_tc_frames="y"
+        elif [[ "$SPEED_FACTOR" != "1" && "$SPEED_FACTOR" != "1.0" && "$SPEED_FACTOR" != "1.000000" ]]; then
+            needs_tc_frames="y"
+        fi
+    fi
+    if [[ "$needs_tc_frames" == "y" ]]; then
         TC_FRAMES_DIR="${TMPDIR}/tc_frames"
         mkdir -p "$TC_FRAMES_DIR"
         "$PYTHON" "${LIB_DIR}/render_timecode.py" \
