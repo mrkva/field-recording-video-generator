@@ -910,11 +910,17 @@ build_ffmpeg_command() {
     local half_vw
     half_vw=$("$PYTHON" -c "print(${viewport_w} / 2.0)")
 
-    # Crop expression: x = clip(scroll_rate*t - viewport/2, 0, total_w - viewport_w)
-    local crop_x="min(max(0,${scroll_rate}*t-${half_vw}),${spec_total_w}-${viewport_w})"
+    # Crop / cursor expressions use `n/fps` (frame index) instead of `t`
+    # (PTS timestamp). ffmpeg 7.x's threaded scheduler can produce stale
+    # `t` values when the filter graph contains setpts (we use it for the
+    # running timecode), which made the spectrogram crop and cursor jump
+    # ahead one frame and stall on the next; frame index is monotonic and
+    # immune to any of that.
+    local pos_t="(${scroll_rate}*n/${fps})"
+    local crop_x="min(max(0,${pos_t}-${half_vw}),${spec_total_w}-${viewport_w})"
 
-    # Cursor x position in viewport (for overlay filter, which supports dynamic expressions)
-    local cursor_x="(${scroll_rate}*t)-min(max(0,${scroll_rate}*t-${half_vw}),${spec_total_w}-${viewport_w})-10"
+    # Cursor x position in viewport (overlay supports n the same as t).
+    local cursor_x="${pos_t}-min(max(0,${pos_t}-${half_vw}),${spec_total_w}-${viewport_w})-10"
 
     # Extra parameters (21+)
     local scroll_value_x="${21:-}"
